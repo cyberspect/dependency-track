@@ -40,7 +40,8 @@ public class BomConsumedOrProcessed {
     }
 
     public String getBom() {
-        return bom;
+        //return bom;
+        return null; // Including raw BOM detail is too large for AWS Lambda
     }
 
     public Bom.Format getFormat() {
