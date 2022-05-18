@@ -18,6 +18,7 @@
  */
 package org.dependencytrack.persistence;
 
+import alpine.common.logging.Logger;
 import alpine.event.framework.Event;
 import alpine.model.ApiKey;
 import alpine.model.Permission;
@@ -31,6 +32,7 @@ import org.dependencytrack.auth.Permissions;
 import org.dependencytrack.event.IndexEvent;
 import org.dependencytrack.model.Analysis;
 import org.dependencytrack.model.AnalysisComment;
+import org.dependencytrack.model.Classifier;
 import org.dependencytrack.model.Component;
 import org.dependencytrack.model.ConfigPropertyConstants;
 import org.dependencytrack.model.FindingAttribution;
@@ -39,6 +41,7 @@ import org.dependencytrack.model.ProjectProperty;
 import org.dependencytrack.model.ServiceComponent;
 import org.dependencytrack.model.Tag;
 import org.dependencytrack.model.Vulnerability;
+
 import javax.jdo.FetchPlan;
 import javax.jdo.PersistenceManager;
 import javax.jdo.Query;
@@ -51,6 +54,8 @@ import java.util.Map;
 import java.util.UUID;
 
 final class ProjectQueryManager extends QueryManager implements IQueryManager {
+
+    private static final Logger LOGGER = Logger.getLogger(ProjectQueryManager.class);
 
     /**
      * Constructs a new QueryManager.
@@ -226,10 +231,15 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
      * @param tag the tag associated with the Project
      * @return a List of Projects that contain the tag
      */
-    public PaginatedResult getProjects(final Tag tag, final boolean includeMetrics) {
+    public PaginatedResult getProjects(final Tag tag, final boolean includeMetrics, final boolean excludeInactive) {
         final PaginatedResult result;
         final Query<Project> query = pm.newQuery(Project.class);
-        final String queryFilter = "(tags.contains(:tag))";
+        final String queryFilter;
+        if (excludeInactive) {
+            queryFilter = "(tags.contains(:tag)) && (active == true || active == null)";
+        } else {
+            queryFilter = "(tags.contains(:tag))";
+        }
         if (orderBy == null) {
             query.setOrdering("name asc");
         }
@@ -248,12 +258,43 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
     }
 
     /**
+     * Returns a paginated result of projects by classifier.
+     * @param classifier the classifier of the Project
+     * @return a List of Projects of the specified classifier
+     */
+    public PaginatedResult getProjects(final Classifier classifier, final boolean includeMetrics, final boolean excludeInactive) {
+        final PaginatedResult result;
+        final Query<Project> query = pm.newQuery(Project.class);
+        final String queryFilter;
+        if (excludeInactive) {
+            queryFilter = "(classifier == :classifier) && (active == true || active == null)";
+        } else {
+            queryFilter = "(classifier == :classifier)";
+        }
+        if (orderBy == null) {
+            query.setOrdering("name asc");
+        }
+        final Map<String, Object> params = new HashMap<>();
+        params.put("classifier", classifier);
+        preprocessACLs(query, queryFilter, params, false);
+        result = execute(query, params);
+        if (includeMetrics) {
+            // Populate each Project object in the paginated result with transitive related
+            // data to minimize the number of round trips a client needs to make, process, and render.
+            for (Project project : result.getList(Project.class)) {
+                project.setMetrics(getMostRecentProjectMetrics(project));
+            }
+        }
+        return result;
+    }
+
+    /**
      * Returns a paginated result of projects by tag.
      * @param tag the tag associated with the Project
      * @return a List of Projects that contain the tag
      */
     public PaginatedResult getProjects(final Tag tag) {
-        return getProjects(tag, false);
+        return getProjects(tag, false, false);
     }
 
     /**
@@ -538,16 +579,18 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
     /**
      * Deletes a Project and all objects dependant on the project.
      * @param project the Project to delete
+     * @param commitIndex specifies if the search index should be committed (an expensive operation)
      */
-    public void recursivelyDelete(Project project) {
+    public void recursivelyDelete(final Project project, final boolean commitIndex) {
         if (project.getChildren() != null) {
             for (final Project child: project.getChildren()) {
-                recursivelyDelete(child);
+                recursivelyDelete(child, false);
             }
         }
         pm.getFetchPlan().setDetachmentOptions(FetchPlan.DETACH_LOAD_FIELDS);
         final Project result = pm.getObjectById(Project.class, project.getId());
         Event.dispatch(new IndexEvent(IndexEvent.Action.DELETE, pm.detachCopy(result)));
+        commitSearchIndex(commitIndex, Project.class);
 
         deleteAnalysisTrail(project);
         deleteViolationAnalysisTrail(project);
@@ -560,6 +603,7 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
             recursivelyDelete(s, false);
         }
         deleteBoms(project);
+        deleteVexs(project);
         removeProjectFromNotificationRules(project);
         delete(project.getProperties());
         delete(getAllBoms(project));
@@ -660,10 +704,12 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
                 if (super.hasAccessManagementPermission(userPrincipal)) {
                     return true;
                 }
-                for (final Team userInTeam : userPrincipal.getTeams()) {
-                    for (final Team accessTeam : project.getAccessTeams()) {
-                        if (userInTeam.getId() == accessTeam.getId()) {
-                            return true;
+                if (userPrincipal.getTeams() != null) {
+                    for (final Team userInTeam : userPrincipal.getTeams()) {
+                        for (final Team accessTeam : project.getAccessTeams()) {
+                            if (userInTeam.getId() == accessTeam.getId()) {
+                                return true;
+                            }
                         }
                     }
                 }
@@ -672,10 +718,12 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
                 if (super.hasAccessManagementPermission(apiKey)) {
                     return true;
                 }
-                for (final Team userInTeam : apiKey.getTeams()) {
-                    for (final Team accessTeam : project.getAccessTeams()) {
-                        if (userInTeam.getId() == accessTeam.getId()) {
-                            return true;
+                if (apiKey.getTeams() != null) {
+                    for (final Team userInTeam : apiKey.getTeams()) {
+                        for (final Team accessTeam : project.getAccessTeams()) {
+                            if (userInTeam.getId() == accessTeam.getId()) {
+                                return true;
+                            }
                         }
                     }
                 }
@@ -729,6 +777,32 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
         } else if (StringUtils.trimToNull(inputFilter) != null) {
             query.setFilter(inputFilter);
         }
+    }
+
+    /**
+     * Updates a Project ACL to add the principals Team to the AccessTeams
+     * This only happens if Portfolio Access Control is enabled and the @param principal is an ApyKey
+     * For a UserPrincipal we don't know which Team(s) to add to the ACL,
+     * See https://github.com/DependencyTrack/dependency-track/issues/1435
+     * @param project
+     * @param principal
+     * @return True if ACL was updated
+     */
+    public boolean updateNewProjectACL(Project project, Principal principal) {
+        if (isEnabled(ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED) && principal instanceof ApiKey) {
+            ApiKey apiKey = (ApiKey) principal;
+            final var apiTeam = apiKey.getTeams().stream().findFirst();
+            if (apiTeam.isPresent()) {
+                LOGGER.debug("adding Team to ACL of newly created project");
+                final Team team = getObjectByUuid(Team.class, apiTeam.get().getUuid());
+                project.addAccessTeam(team);
+                persist(project);
+                return true;
+            } else {
+                LOGGER.warn("API Key without a Team, unable to assign team ACL to project.");
+            }
+        }
+        return false;
     }
 
     public boolean hasAccessManagementPermission(final UserPrincipal userPrincipal) {

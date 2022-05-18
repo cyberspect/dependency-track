@@ -18,16 +18,20 @@
  */
 package org.dependencytrack.model;
 
-import alpine.json.TrimmedStringDeserializer;
+import alpine.common.validation.RegexSequence;
 import alpine.model.Team;
-import alpine.validation.RegexSequence;
+import alpine.server.json.TrimmedStringDeserializer;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.JsonSerializer;
+import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
 import org.dependencytrack.resources.v1.serializers.CustomPackageURLSerializer;
+
 import javax.jdo.annotations.Column;
 import javax.jdo.annotations.Element;
 import javax.jdo.annotations.Extension;
@@ -45,6 +49,7 @@ import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
+import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -225,6 +230,7 @@ public class Project implements Serializable {
 
     @Persistent
     @Column(name = "ACTIVE")
+    @JsonSerialize(nullsUsing = BooleanDefaultTrueSerializer.class)
     private Boolean active; // Added in v3.6. Existing records need to be nullable on upgrade.
 
     @Persistent(table = "PROJECT_ACCESS_TEAMS", defaultFetchGroup = "true")
@@ -409,14 +415,11 @@ public class Project implements Serializable {
         this.lastInheritedRiskScore = lastInheritedRiskScore;
     }
 
-    public boolean isActive() {
-        if (active == null) {
-            return true;
-        }
+    public Boolean isActive() {
         return active;
     }
 
-    public void setActive(boolean active) {
+    public void setActive(Boolean active) {
         this.active = active;
     }
 
@@ -458,5 +461,14 @@ public class Project implements Serializable {
             }
             return sb.toString();
         }
+    }
+    
+    private final static class BooleanDefaultTrueSerializer extends JsonSerializer<Boolean> {
+
+        @Override
+        public void serialize(Boolean value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+            gen.writeBoolean(value != null ? value : true);
+        }
+        
     }
 }

@@ -18,13 +18,15 @@
  */
 package org.dependencytrack.policy;
 
-import alpine.logging.Logger;
+import alpine.common.logging.Logger;
 import org.dependencytrack.model.Component;
 import org.dependencytrack.model.Policy;
 import org.dependencytrack.model.PolicyCondition;
 import org.dependencytrack.model.PolicyViolation;
 import org.dependencytrack.model.Project;
 import org.dependencytrack.persistence.QueryManager;
+import org.dependencytrack.util.NotificationUtil;
+
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -88,6 +90,9 @@ public class PolicyEngine {
             }
         }
         qm.reconcilePolicyViolations(component, policyViolations);
+        for (final PolicyViolation pv: qm.getAllPolicyViolations(component)) {
+            NotificationUtil.analyzeNotificationCriteria(qm, pv);
+        }
     }
 
     private boolean isPolicyAssignedToProject(Policy policy, Project project) {
@@ -106,7 +111,6 @@ public class PolicyEngine {
             pv.setType(determineViolationType(pcv.getPolicyCondition().getSubject()));
             pv.setTimestamp(new Date());
             policyViolations.add(qm.addPolicyViolationIfNotExist(pv));
-            // TODO: Create notifications (NotificationUtil) if the policy did not previously exist.
         }
         return policyViolations;
     }

@@ -18,7 +18,7 @@
  */
 package org.dependencytrack.notification;
 
-import alpine.logging.Logger;
+import alpine.common.logging.Logger;
 import alpine.notification.Notification;
 import alpine.notification.NotificationLevel;
 import alpine.notification.Subscriber;
@@ -28,7 +28,10 @@ import org.dependencytrack.notification.publisher.Publisher;
 import org.dependencytrack.notification.vo.BomConsumedOrProcessed;
 import org.dependencytrack.notification.vo.NewVulnerabilityIdentified;
 import org.dependencytrack.notification.vo.NewVulnerableDependency;
+import org.dependencytrack.notification.vo.PolicyViolationIdentified;
+import org.dependencytrack.notification.vo.VexConsumedOrProcessed;
 import org.dependencytrack.persistence.QueryManager;
+
 import javax.jdo.PersistenceManager;
 import javax.jdo.Query;
 import javax.json.Json;
@@ -128,6 +131,14 @@ public class NotificationRouter implements Subscriber {
             } else if (NotificationScope.PORTFOLIO.name().equals(notification.getScope())
                     && notification.getSubject() != null && notification.getSubject() instanceof BomConsumedOrProcessed) {
                 final BomConsumedOrProcessed subject = (BomConsumedOrProcessed) notification.getSubject();
+                limitToProject(rules, result, notification, subject.getProject());
+            } else if (NotificationScope.PORTFOLIO.name().equals(notification.getScope())
+                    && notification.getSubject() != null && notification.getSubject() instanceof VexConsumedOrProcessed) {
+                final VexConsumedOrProcessed subject = (VexConsumedOrProcessed) notification.getSubject();
+                limitToProject(rules, result, notification, subject.getProject());
+            } else if (NotificationScope.PORTFOLIO.name().equals(notification.getScope())
+                    && notification.getSubject() != null && notification.getSubject() instanceof PolicyViolationIdentified) {
+                final PolicyViolationIdentified subject = (PolicyViolationIdentified) notification.getSubject();
                 limitToProject(rules, result, notification, subject.getProject());
             } else {
                 for (final NotificationRule rule: result) {

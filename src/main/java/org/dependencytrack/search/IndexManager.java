@@ -19,7 +19,7 @@
 package org.dependencytrack.search;
 
 import alpine.Config;
-import alpine.logging.Logger;
+import alpine.common.logging.Logger;
 import alpine.notification.Notification;
 import alpine.notification.NotificationLevel;
 import org.apache.commons.collections4.CollectionUtils;
@@ -33,7 +33,6 @@ import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.CorruptIndexException;
 import org.apache.lucene.index.DirectoryReader;
-import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
@@ -48,6 +47,7 @@ import org.apache.lucene.store.SimpleFSDirectory;
 import org.dependencytrack.notification.NotificationConstants;
 import org.dependencytrack.notification.NotificationGroup;
 import org.dependencytrack.notification.NotificationScope;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -64,8 +64,8 @@ public abstract class IndexManager implements AutoCloseable {
 
     private static final Logger LOGGER = Logger.getLogger(IndexManager.class);
     private IndexWriter iwriter;
-    private IndexSearcher isearcher;
     private MultiFieldQueryParser qparser;
+    private DirectoryReader searchReader;
     private final IndexType indexType;
 
     /**
@@ -159,17 +159,22 @@ public abstract class IndexManager implements AutoCloseable {
     }
 
     /**
-     * Returns an IndexSearcher by opening the index directory first, if necessary.
-     * @return an IndexSearcher
+     * Returns an {@link IndexSearcher} by opening the index directory first, if necessary.
+     *
+     * @return an {@link IndexSearcher}
      * @throws IOException when the index directory cannot be opened
      * @since 3.0.0
      */
-    protected IndexSearcher getIndexSearcher() throws IOException {
-        if (isearcher == null) {
-            final IndexReader reader = DirectoryReader.open(getDirectory());
-            isearcher = new IndexSearcher(reader);
+    protected synchronized IndexSearcher getIndexSearcher() throws IOException {
+        if (searchReader == null) {
+            searchReader = DirectoryReader.open(getDirectory());
+        } else {
+            final var changedReader = DirectoryReader.openIfChanged(searchReader);
+            if (changedReader != null) {
+                searchReader = changedReader;
+            }
         }
-        return isearcher;
+        return new IndexSearcher(searchReader);
     }
 
     /**
