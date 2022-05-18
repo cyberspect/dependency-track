@@ -18,9 +18,9 @@
  */
 package org.dependencytrack.tasks;
 
+import alpine.common.logging.Logger;
 import alpine.event.framework.Event;
 import alpine.event.framework.Subscriber;
-import alpine.logging.Logger;
 import alpine.persistence.PaginatedResult;
 import org.dependencytrack.event.MetricsUpdateEvent;
 import org.dependencytrack.metrics.Metrics;
@@ -35,6 +35,7 @@ import org.dependencytrack.model.Severity;
 import org.dependencytrack.model.Vulnerability;
 import org.dependencytrack.model.VulnerabilityMetrics;
 import org.dependencytrack.persistence.QueryManager;
+
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -82,7 +83,7 @@ public class MetricsUpdateTask implements Subscriber {
      * Performs high-level metric updates on the portfolio.
      * @param qm a QueryManager instance
      */
-    private void updatePortfolioMetrics(final QueryManager qm) {
+    MetricCounters updatePortfolioMetrics(final QueryManager qm) {
         LOGGER.info("Executing portfolio metrics update");
         final Date measuredAt = new Date();
 
@@ -96,10 +97,12 @@ public class MetricsUpdateTask implements Subscriber {
 
         // Iterate through all projects
         LOGGER.debug("Iterating through active projects");
-        for (final Project project: projects) {
-            try {
+        for (final Project project : projects) {
+            // Due to the large buildup of cached objects, we use a new query manager
+            // for each project. That way, resources are released in reasonable intervals.
+            try (final var pqm = new QueryManager()) {
                 // Update the projects metrics
-                final MetricCounters projectMetrics = updateProjectMetrics(qm, project.getId());
+                final MetricCounters projectMetrics = updateProjectMetrics(pqm, project.getId());
                 projectCountersList.add(projectMetrics);
             } catch (Exception e) {
                 LOGGER.error("An unexpected error occurred while updating portfolio metrics and iterating through projects. The error occurred while updating metrics for project: " + project.getUuid().toString(), e);
@@ -243,6 +246,7 @@ public class MetricsUpdateTask implements Subscriber {
             qm.persist(portfolioMetrics);
         }
         LOGGER.info("Completed portfolio metrics update");
+        return portfolioCounters;
     }
 
     /**
@@ -251,7 +255,7 @@ public class MetricsUpdateTask implements Subscriber {
      * @param oid the object ID of the project
      * @return MetricCounters
      */
-    private MetricCounters updateProjectMetrics(final QueryManager qm, final long oid) {
+    MetricCounters updateProjectMetrics(final QueryManager qm, final long oid) {
         final Project project = qm.getObjectById(Project.class, oid);
         LOGGER.info("Executing metrics update for project: " + project.getUuid());
         final Date measuredAt = new Date();
@@ -358,11 +362,14 @@ public class MetricsUpdateTask implements Subscriber {
             last.setLastOccurrence(measuredAt);
             LOGGER.debug("Persisting metrics for project: " + project.getUuid());
             qm.persist(last);
-            LOGGER.debug("Updating Inherited Risk Score for project: " + project.getUuid());
             // Update the convenience fields in the Project object
-            project.setLastInheritedRiskScore(last.getInheritedRiskScore());
-            LOGGER.debug("Persisting metrics for project: " + project.getUuid());
-            qm.persist(project);
+            if (project.getLastInheritedRiskScore() == null ||
+                    project.getLastInheritedRiskScore() != last.getInheritedRiskScore()) {
+                LOGGER.debug("Updating Inherited Risk Score for project: " + project.getUuid());
+                project.setLastInheritedRiskScore(last.getInheritedRiskScore());
+                LOGGER.debug("Persisting metrics for project: " + project.getUuid());
+                qm.persist(project);
+            }
         } else {
             LOGGER.debug("Metrics have changed (or were never previously measured) for project: " + project.getUuid());
             final ProjectMetrics projectMetrics = new ProjectMetrics();
@@ -399,11 +406,14 @@ public class MetricsUpdateTask implements Subscriber {
             projectMetrics.setLastOccurrence(measuredAt);
             LOGGER.debug("Persisting metrics for project: " + project.getUuid());
             qm.persist(projectMetrics);
-            LOGGER.debug("Updating Inherited Risk Score for project: " + project.getUuid());
             // Update the convenience fields in the Project object
-            project.setLastInheritedRiskScore(projectMetrics.getInheritedRiskScore());
-            LOGGER.debug("Persisting metrics for project: " + project.getUuid());
-            qm.persist(project);
+            if (project.getLastInheritedRiskScore() == null ||
+                    project.getLastInheritedRiskScore() != projectMetrics.getInheritedRiskScore()) {
+                LOGGER.debug("Updating Inherited Risk Score for project: " + project.getUuid());
+                project.setLastInheritedRiskScore(projectMetrics.getInheritedRiskScore());
+                LOGGER.debug("Persisting metrics for project: " + project.getUuid());
+                qm.persist(project);
+            }
         }
         LOGGER.info("Completed metrics update for project: " + project.getUuid());
         return counters;
@@ -415,7 +425,7 @@ public class MetricsUpdateTask implements Subscriber {
      * @param oid object ID of the component to perform metric updates on
      * @return MetricCounters
      */
-    private MetricCounters updateComponentMetrics(final QueryManager qm, final long oid) {
+    MetricCounters updateComponentMetrics(final QueryManager qm, final long oid) {
         final Component component = qm.getObjectById(Component.class, oid);
         LOGGER.debug("Executing metrics update for component: " + component.getUuid());
         final Date measuredAt = new Date();
@@ -430,12 +440,13 @@ public class MetricsUpdateTask implements Subscriber {
 
         // For the time being finding and vulnerability counts are the same.
         // However, vulns may be defined as 'confirmed' in a future release.
-        counters.findingsTotal = counters.severitySum();
+        counters.vulnerabilities = counters.severitySum();
+        counters.findingsTotal = counters.vulnerabilities;
         LOGGER.debug("Retrieving existing audited count for component: " + component.getUuid());
         counters.findingsAudited = toIntExact(qm.getAuditedCount(component));
         counters.findingsUnaudited = counters.findingsTotal - counters.findingsAudited;
 
-        for (final PolicyViolation violation: qm.getAllPolicyViolations(component)) {
+        for (final PolicyViolation violation: qm.getAllPolicyViolations(component, false)) {
             counters.policyViolationsTotal++;
 
             // Assign violation states
@@ -449,18 +460,33 @@ public class MetricsUpdateTask implements Subscriber {
             // Assign violation types
             if (PolicyViolation.Type.LICENSE == violation.getType()) {
                 counters.policyViolationsLicenseTotal++;
-                //counters.policyViolationsLicenseAudited = qm.getAuditedCount(violation, component);
-                counters.policyViolationsLicenseUnaudited = counters.policyViolationsLicenseTotal - counters.policyViolationsLicenseAudited;
             } else if (PolicyViolation.Type.SECURITY == violation.getType()) {
                 counters.policyViolationsSecurityTotal++;
-                //counters.policyViolationsSecurityAudited = qm.getAuditedCount(violation, component);
-                counters.policyViolationsSecurityUnaudited = counters.policyViolationsSecurityTotal - counters.policyViolationsSecurityAudited;
             } else if (PolicyViolation.Type.OPERATIONAL == violation.getType()) {
                 counters.policyViolationsOperationalTotal++;
-                //counters.policyViolationsOperationalAudited = qm.getAuditedCount(violation, component);
-                counters.policyViolationsOperationalUnaudited = counters.policyViolationsOperationalTotal - counters.policyViolationsOperationalAudited;
             }
         }
+
+        // Calculate audit counts per violation type.
+        // Only do this if there are any violations at all, otherwise we'll be performing unnecessary database operations.
+        if (counters.policyViolationsLicenseTotal > 0) {
+            counters.policyViolationsLicenseAudited = toIntExact(qm.getAuditedCount(component, PolicyViolation.Type.LICENSE));
+            counters.policyViolationsLicenseUnaudited = counters.policyViolationsLicenseTotal - counters.policyViolationsLicenseAudited;
+        }
+        if (counters.policyViolationsOperationalTotal > 0) {
+            counters.policyViolationsOperationalAudited = toIntExact(qm.getAuditedCount(component, PolicyViolation.Type.OPERATIONAL));
+            counters.policyViolationsOperationalUnaudited = counters.policyViolationsOperationalTotal - counters.policyViolationsOperationalAudited;
+        }
+        if (counters.policyViolationsSecurityTotal > 0) {
+            counters.policyViolationsSecurityAudited = toIntExact(qm.getAuditedCount(component, PolicyViolation.Type.SECURITY));
+            counters.policyViolationsSecurityUnaudited = counters.policyViolationsSecurityTotal - counters.policyViolationsSecurityAudited;
+        }
+
+        // Calculate total audit counts across all violation types.
+        counters.policyViolationsAudited = counters.policyViolationsLicenseAudited +
+                counters.policyViolationsOperationalAudited +
+                counters.policyViolationsSecurityAudited;
+        counters.policyViolationsUnaudited = counters.policyViolationsTotal - counters.policyViolationsAudited;
 
         // Query for an existing ComponentMetrics
         final DependencyMetrics last = qm.getMostRecentDependencyMetrics(component);
@@ -497,11 +523,14 @@ public class MetricsUpdateTask implements Subscriber {
             last.setLastOccurrence(measuredAt);
             LOGGER.debug("Persisting metrics for component: " + component.getUuid());
             qm.persist(last);
-            LOGGER.debug("Updating Inherited Risk Score for component: " + component.getUuid());
             // Update the convenience fields in the Component object
-            component.setLastInheritedRiskScore(last.getInheritedRiskScore());
-            LOGGER.debug("Persisting metrics for component: " + component.getUuid());
-            qm.persist(component);
+            if (component.getLastInheritedRiskScore() == null ||
+                    component.getLastInheritedRiskScore() != last.getInheritedRiskScore()) {
+                LOGGER.debug("Updating Inherited Risk Score for component: " + component.getUuid());
+                component.setLastInheritedRiskScore(last.getInheritedRiskScore());
+                LOGGER.debug("Persisting metrics for component: " + component.getUuid());
+                qm.persist(component);
+            }
         } else {
             LOGGER.debug("Metrics have changed (or were never previously measured) for component: " + component.getUuid());
             final DependencyMetrics componentMetrics = new DependencyMetrics();
@@ -537,11 +566,14 @@ public class MetricsUpdateTask implements Subscriber {
             componentMetrics.setLastOccurrence(measuredAt);
             LOGGER.debug("Persisting metrics for component: " + component.getUuid());
             qm.persist(componentMetrics);
-            LOGGER.debug("Updating Inherited Risk Score for component: " + component.getUuid());
             // Update the convenience fields in the Component object
-            component.setLastInheritedRiskScore(componentMetrics.getInheritedRiskScore());
-            LOGGER.debug("Persisting metrics for component: " + component.getUuid());
-            qm.persist(component);
+            if (component.getLastInheritedRiskScore() == null ||
+                    component.getLastInheritedRiskScore() != componentMetrics.getInheritedRiskScore()) {
+                LOGGER.debug("Updating Inherited Risk Score for component: " + component.getUuid());
+                component.setLastInheritedRiskScore(componentMetrics.getInheritedRiskScore());
+                LOGGER.debug("Persisting metrics for component: " + component.getUuid());
+                qm.persist(component);
+            }
         }
         LOGGER.debug("Completed metrics update for component: " + component.getUuid());
         return counters;
@@ -632,10 +664,10 @@ public class MetricsUpdateTask implements Subscriber {
     /**
      * A value object that holds various counters returned by the updating of metrics.
      */
-    private class MetricCounters {
+    static class MetricCounters {
 
-        private int critical, high, medium, low, unassigned;
-        private int projects, vulnerableProjects, components, vulnerableComponents,
+        int critical, high, medium, low, unassigned;
+        int projects, vulnerableProjects, components, vulnerableComponents,
                 vulnerabilities, suppressions, findingsTotal, findingsAudited, findingsUnaudited,
                 policyViolationsFail, policyViolationsWarn, policyViolationsInfo, policyViolationsTotal,
                 policyViolationsAudited, policyViolationsUnaudited, policyViolationsSecurityTotal,

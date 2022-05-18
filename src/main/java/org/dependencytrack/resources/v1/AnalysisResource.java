@@ -18,14 +18,14 @@
  */
 package org.dependencytrack.resources.v1;
 
-import alpine.auth.PermissionRequired;
+import alpine.common.validation.RegexSequence;
+import alpine.common.validation.ValidationTask;
 import alpine.model.LdapUser;
 import alpine.model.ManagedUser;
 import alpine.model.OidcUser;
 import alpine.model.UserPrincipal;
-import alpine.resources.AlpineResource;
-import alpine.validation.RegexSequence;
-import alpine.validation.ValidationTask;
+import alpine.server.auth.PermissionRequired;
+import alpine.server.resources.AlpineResource;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -41,7 +41,9 @@ import org.dependencytrack.model.Project;
 import org.dependencytrack.model.Vulnerability;
 import org.dependencytrack.persistence.QueryManager;
 import org.dependencytrack.resources.v1.vo.AnalysisRequest;
+import org.dependencytrack.util.AnalysisCommentUtil;
 import org.dependencytrack.util.NotificationUtil;
+
 import javax.validation.Validator;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
@@ -85,7 +87,7 @@ public class AnalysisResource extends AlpineResource {
                 new ValidationTask(RegexSequence.Pattern.UUID, vulnerabilityUuid, "Vulnerability is not a valid UUID")
         );
         try (QueryManager qm = new QueryManager()) {
-            Project project = null;
+            final Project project;
             if (StringUtils.trimToNull(projectUuid) != null) {
                 project = qm.getObjectByUuid(Project.class, projectUuid);
                 if (project == null) {
@@ -153,41 +155,23 @@ public class AnalysisResource extends AlpineResource {
             boolean suppressionChange = false;
             Analysis analysis = qm.getAnalysis(component, vulnerability);
             if (analysis != null) {
-                if (request.getAnalysisState() != null && analysis.getAnalysisState() != request.getAnalysisState()) {
-                    analysisStateChange = true;
-                    final String message = "Analysis: " + analysis.getAnalysisState().name() + " → " + request.getAnalysisState().name();
-                    qm.makeAnalysisComment(analysis, message, commenter);
-                }
-                if (request.getAnalysisJustification() != null && analysis.getAnalysisJustification() != request.getAnalysisJustification()) {
-                    final String message = "Justification: " + analysis.getAnalysisJustification().name() + " → " + request.getAnalysisJustification().name();
-                    qm.makeAnalysisComment(analysis, message, commenter);
-                }
-                if (request.getAnalysisResponse() != null && analysis.getAnalysisResponse() != request.getAnalysisResponse()) {
-                    final String message = "Vendor Response: " + analysis.getAnalysisResponse().name() + " → " + request.getAnalysisResponse().name();
-                    qm.makeAnalysisComment(analysis, message, commenter);
-                }
-                if (request.getAnalysisDetails() != null && !request.getAnalysisDetails().equals(analysis.getAnalysisDetails())) {
-                    final String message = "Details: " + request.getAnalysisDetails().trim();
-                    qm.makeAnalysisComment(analysis, message, commenter);
-                }
-                if (request.isSuppressed() != null && analysis.isSuppressed() != request.isSuppressed()) {
-                    suppressionChange = true;
-                    final String message = (request.isSuppressed()) ? "Suppressed" : "Unsuppressed";
-                    qm.makeAnalysisComment(analysis, message, commenter);
-                }
+                analysisStateChange = AnalysisCommentUtil.makeStateComment(qm, analysis, request.getAnalysisState(), commenter);
+                AnalysisCommentUtil.makeJustificationComment(qm, analysis, request.getAnalysisJustification(), commenter);
+                AnalysisCommentUtil.makeAnalysisResponseComment(qm, analysis, request.getAnalysisResponse(), commenter);
+                AnalysisCommentUtil.makeAnalysisDetailsComment(qm, analysis, request.getAnalysisDetails(), commenter);
+                suppressionChange = AnalysisCommentUtil.makeAnalysisSuppressionComment(qm, analysis, request.isSuppressed(), commenter);
                 analysis = qm.makeAnalysis(component, vulnerability, request.getAnalysisState(), request.getAnalysisJustification(), request.getAnalysisResponse(), request.getAnalysisDetails(), request.isSuppressed());
             } else {
                 analysis = qm.makeAnalysis(component, vulnerability, request.getAnalysisState(), request.getAnalysisJustification(), request.getAnalysisResponse(), request.getAnalysisDetails(), request.isSuppressed());
                 analysisStateChange = true; // this is a new analysis - so set to true because it was previously null
                 if (AnalysisState.NOT_SET != request.getAnalysisState()) {
-                    final String message = "Analysis: " + AnalysisState.NOT_SET.name() + " → " + request.getAnalysisState().name();
-                    qm.makeAnalysisComment(analysis, message, commenter);
+                    qm.makeAnalysisComment(analysis, String.format("Analysis: %s → %s", AnalysisState.NOT_SET, request.getAnalysisState()), commenter);
                 }
             }
 
             final String comment = StringUtils.trimToNull(request.getComment());
             qm.makeAnalysisComment(analysis, comment, commenter);
-            analysis = qm.getObjectById(Analysis.class, analysis.getId());
+            analysis = qm.getAnalysis(component, vulnerability);
             NotificationUtil.analyzeNotificationCriteria(qm, analysis, analysisStateChange, suppressionChange);
             return Response.ok(analysis).build();
         }

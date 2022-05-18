@@ -18,10 +18,10 @@
  */
 package org.dependencytrack.resources.v1;
 
-import alpine.auth.PermissionRequired;
+import alpine.common.logging.Logger;
 import alpine.event.framework.Event;
-import alpine.logging.Logger;
-import alpine.resources.AlpineResource;
+import alpine.server.auth.PermissionRequired;
+import alpine.server.resources.AlpineResource;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -44,6 +44,7 @@ import org.glassfish.jersey.media.multipart.BodyPartEntity;
 import org.glassfish.jersey.media.multipart.FormDataBodyPart;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.media.multipart.FormDataParam;
+
 import javax.validation.Validator;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DefaultValue;
@@ -58,6 +59,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.io.IOException;
 import java.io.InputStream;
+import java.security.Principal;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
@@ -93,7 +95,7 @@ public class BomResource extends AlpineResource {
             @PathParam("uuid") String uuid,
             @ApiParam(value = "The format to output (defaults to JSON)")
             @QueryParam("format") String format,
-            @ApiParam(value = "Specifies the CycloneDX variant to export. Value options are 'inventory', 'withVulnerabilities', and 'vex'. (defaults to 'inventory')")
+            @ApiParam(value = "Specifies the CycloneDX variant to export. Value options are 'inventory' and 'withVulnerabilities'. (defaults to 'inventory')")
             @QueryParam("variant") String variant,
             @ApiParam(value = "Force the resulting BOM to be downloaded as a file (defaults to 'false')")
             @QueryParam("download") boolean download) {
@@ -111,8 +113,6 @@ public class BomResource extends AlpineResource {
                 exporter = new CycloneDXExporter(CycloneDXExporter.Variant.INVENTORY, qm);
             } else if (variant.equalsIgnoreCase("withVulnerabilities")) {
                 exporter = new CycloneDXExporter(CycloneDXExporter.Variant.INVENTORY_WITH_VULNERABILITIES, qm);
-            } else if (variant.equalsIgnoreCase("vex")) {
-                exporter = new CycloneDXExporter(CycloneDXExporter.Variant.VEX, qm);
             } else {
                 return Response.status(Response.Status.BAD_REQUEST).entity("Invalid BOM variant specified.").build();
             }
@@ -194,7 +194,7 @@ public class BomResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Upload a supported bill of material format document",
-            notes = "Expects CycloneDX along and a valid project UUID. If a UUID is not specified then the projectName and projectVersion must be specified. Optionally, if autoCreate is specified and 'true' and the project does not exist, the project will be created. In this scenario, the principal making the request will additionally need the PORTFOLIO_MANAGEMENT or PROJECT_CREATION_UPLOAD permission."
+            notes = "Expects CycloneDX along and a valid project UUID. If a UUID is not specified, then the projectName and projectVersion must be specified. Optionally, if autoCreate is specified and 'true' and the project does not exist, the project will be created. In this scenario, the principal making the request will additionally need the PORTFOLIO_MANAGEMENT or PROJECT_CREATION_UPLOAD permission."
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -224,7 +224,8 @@ public class BomResource extends AlpineResource {
                 if (project == null && request.isAutoCreate()) {
                     if (hasPermission(Permissions.Constants.PORTFOLIO_MANAGEMENT) || hasPermission(Permissions.Constants.PROJECT_CREATION_UPLOAD)) {
                         project = qm.createProject(StringUtils.trimToNull(request.getProjectName()), null, StringUtils.trimToNull(request.getProjectVersion()), null, null, null, true, true);
-                        //TODO - If portfolio access control is enabled, retrieve the principal (ApiKey only) and automatically grant access to the project to the team the key belongs to.
+                        Principal principal = getPrincipal();
+                        qm.updateNewProjectACL(project, principal);
                     } else {
                         return Response.status(Response.Status.UNAUTHORIZED).entity("The principal does not have permission to create project.").build();
                     }
@@ -239,7 +240,7 @@ public class BomResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Upload a supported bill of material format document",
-            notes = "Expects CycloneDX along and a valid project UUID. If a UUID is not specified, than the projectName and projectVersion must be specified. Optionally, if autoCreate is specified and 'true' and the project does not exist, the project will be created. In this scenario, the principal making the request will additionally need the PORTFOLIO_MANAGEMENT or PROJECT_CREATION_UPLOAD permission."
+            notes = "Expects CycloneDX along and a valid project UUID. If a UUID is not specified, then the projectName and projectVersion must be specified. Optionally, if autoCreate is specified and 'true' and the project does not exist, the project will be created. In this scenario, the principal making the request will additionally need the PORTFOLIO_MANAGEMENT or PROJECT_CREATION_UPLOAD permission."
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -267,7 +268,8 @@ public class BomResource extends AlpineResource {
                 if (project == null && autoCreate) {
                     if (hasPermission(Permissions.Constants.PORTFOLIO_MANAGEMENT) || hasPermission(Permissions.Constants.PROJECT_CREATION_UPLOAD)) {
                         project = qm.createProject(trimmedProjectName, null, trimmedProjectVersion, null, null, null, true, true);
-                        //TODO - If portfolio access control is enabled, retrieve the principal (ApiKey only) and automatically grant access to the project to the team the key belongs to.
+                        Principal principal = getPrincipal();
+                        qm.updateNewProjectACL(project, principal);
                     } else {
                         return Response.status(Response.Status.UNAUTHORIZED).entity("The principal does not have permission to create project.").build();
                     }

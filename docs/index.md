@@ -14,6 +14,8 @@ CI/CD environments.
 ![dashboard](images/screenshots/dashboard.png)
 
 ## Features
+* Consumes and produces [CycloneDX] Software Bill of Materials (SBOM)
+* Consumes and produces CycloneDX Vulnerability Exploitability Exchange (VEX)
 * Component support for:
   * Applications
   * Libraries
@@ -23,6 +25,7 @@ CI/CD environments.
   * Firmware
   * Files
   * Hardware
+  * Services
 * Tracks component usage across every application in an organizations portfolio
 * Quickly identify what is affected, and where
 * Identifies multiple forms of risk including
@@ -33,10 +36,12 @@ CI/CD environments.
   * More coming soon...
 * Integrates with multiple sources of vulnerability intelligence including:
   * [National Vulnerability Database] (NVD)
-  * [NPM Public Advisories]
+  * [GitHub Advisories]
   * [Sonatype OSS Index]
   * [VulnDB] from [Risk Based Security]
   * More coming soon.
+* Helps to prioritize mitigation by incorporating support for the [Exploit Prediction Scoring System (EPSS)]
+* Maintain a private vulnerability database of vulnerability components
 * Robust policy engine with support for global and per-project policies
   * Security risk and compliance
   * License risk and compliance
@@ -61,7 +66,6 @@ CI/CD environments.
 * Includes a comprehensive auditing workflow for triaging results
 * Configurable notifications supporting Slack, Microsoft Teams, Webhooks, and Email
 * Supports standardized SPDX license ID’s and tracks license use by component
-* Supports importing [CycloneDX] Software Bill of Materials (SBOM) formats
 * Easy to read metrics for components, projects, and portfolio
 * Native support for Kenna Security, Fortify SSC, ThreadFix, and DefectDojo
 * API-first design facilitates easy integration with other systems
@@ -71,10 +75,11 @@ CI/CD environments.
 * Simple to install and configure. Get up and running in just a few minutes
 
 [National Vulnerability Database]: https://nvd.nist.gov
-[NPM Public Advisories]: https://www.npmjs.com/advisories
+[GitHub Advisories]: https://www.github.com/advisories
 [Sonatype OSS Index]: https://ossindex.sonatype.org
 [VulnDB]: https://vulndb.cyberriskanalytics.com
 [Risk Based Security]: https://www.riskbasedsecurity.com
 [Component Analysis]: https://owasp.org/www-community/Component_Analysis
 [Software Bill of Materials]: https://owasp.org/www-community/Component_Analysis#software-bill-of-materials-sbom
 [CycloneDX]: https://cyclonedx.org
+[Exploit Prediction Scoring System (EPSS)]: https://www.first.org/epss/

@@ -2,7 +2,7 @@
 title: Best Practices
 category: Best Practices
 chapter: 9
-order: 
+order:
 ---
 
 #### Summary
@@ -16,18 +16,21 @@ how effective the system will be when performing component risk analysis.
 * Generate or acquire BOMs from commercial-off-the-shelf (COTS) software
 
 #### Summary
-The ability for an organization to generate a complete bill-of-material during continuous 
+The ability for an organization to generate a complete bill-of-material during continuous
 integration is one of many maturity indicators. BOMs are increasingly required for various
 compliance, regulatory, legal, or economic reasons.
 
 ### Analyzers
 * Enable Internal Analyzer
-* Enable NPM Audit
 * Enable OSS Index
 
+### Data Sources
+* Enable National Vulnerability Database mirroring
+* Enable GitHub Advisories mirroring
+
 #### Summary
-Sonatype OSS Index and NPM Audit provides accurate vulnerability information for application dependencies.
-All components in the portfolio should have valid Package URLs to take advantage of OSS Index and NPM Audit.
+Sonatype OSS Index provides accurate vulnerability information for application dependencies.
+All components in the portfolio should have valid Package URLs to take advantage of OSS Index and GitHub Advisories.
 Non-application dependencies such as operating systems, hardware, firmware, etc, should have valid CPEs to
 take advantage of the internal CPE analyzer.
 
@@ -43,5 +46,5 @@ take advantage of the internal CPE analyzer.
 #### Summary
 Findings in Dependency-Track are intended to be a source-of-truth, but they're not meant to be kept
 in a silo. Dependency-Track has an API-first design intended to promote integration with other systems.
-By leveraging these capabilities, organizations benefit from increased software transparency and ultimately 
+By leveraging these capabilities, organizations benefit from increased software transparency and ultimately
 reduce risk to stakeholders.

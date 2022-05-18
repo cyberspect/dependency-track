@@ -18,10 +18,12 @@
  */
 package org.dependencytrack.tasks;
 
+import alpine.common.logging.Logger;
 import alpine.event.framework.Event;
 import alpine.event.framework.LoggableSubscriber;
-import alpine.logging.Logger;
 import alpine.model.ConfigProperty;
+import alpine.notification.Notification;
+import alpine.notification.NotificationLevel;
 import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
 import com.github.packageurl.PackageURLBuilder;
@@ -38,12 +40,16 @@ import org.dependencytrack.model.Cwe;
 import org.dependencytrack.model.Severity;
 import org.dependencytrack.model.Vulnerability;
 import org.dependencytrack.model.VulnerableSoftware;
+import org.dependencytrack.notification.NotificationConstants;
+import org.dependencytrack.notification.NotificationGroup;
+import org.dependencytrack.notification.NotificationScope;
 import org.dependencytrack.parser.common.resolver.CweResolver;
-import org.dependencytrack.parser.github.graphql.model.GitHubSecurityAdvisory;
 import org.dependencytrack.parser.github.graphql.GitHubSecurityAdvisoryParser;
+import org.dependencytrack.parser.github.graphql.model.GitHubSecurityAdvisory;
 import org.dependencytrack.parser.github.graphql.model.GitHubVulnerability;
 import org.dependencytrack.parser.github.graphql.model.PageableList;
 import org.dependencytrack.persistence.QueryManager;
+
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
@@ -54,7 +60,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.dependencytrack.model.ConfigPropertyConstants.*;
+import static org.dependencytrack.model.ConfigPropertyConstants.VULNERABILITY_SOURCE_GITHUB_ADVISORIES_ACCESS_TOKEN;
+import static org.dependencytrack.model.ConfigPropertyConstants.VULNERABILITY_SOURCE_GITHUB_ADVISORIES_ENABLED;
 
 public class GitHubAdvisoryMirrorTask implements LoggableSubscriber {
 
@@ -65,6 +72,7 @@ public class GitHubAdvisoryMirrorTask implements LoggableSubscriber {
 
     private final boolean isEnabled;
     private String accessToken;
+    private boolean mirroredWithoutErrors = true;
 
     public GitHubAdvisoryMirrorTask() {
         try (final QueryManager qm = new QueryManager()) {
@@ -82,13 +90,17 @@ public class GitHubAdvisoryMirrorTask implements LoggableSubscriber {
      * {@inheritDoc}
      */
     public void inform(final Event e) {
-        if (e instanceof GitHubAdvisoryMirrorEvent && this.isEnabled && this.accessToken != null) {
-            final long start = System.currentTimeMillis();
-            LOGGER.info("Starting GitHub Advisory mirroring task");
-            retrieveAdvisories(null);
-            final long end = System.currentTimeMillis();
-            LOGGER.info("GitHub Advisory mirroring complete");
-            LOGGER.info("Time spent (total): " + (end - start) + "ms");
+        if (e instanceof GitHubAdvisoryMirrorEvent && this.isEnabled) {
+            if (this.accessToken != null) {
+                final long start = System.currentTimeMillis();
+                LOGGER.info("Starting GitHub Advisory mirroring task");
+                retrieveAdvisories(null);
+                final long end = System.currentTimeMillis();
+                LOGGER.info("GitHub Advisory mirroring complete");
+                LOGGER.info("Time spent (total): " + (end - start) + "ms");
+            } else {
+                LOGGER.warn("GitHub Advisory mirroring is enabled, but no personal access token is configured. Skipping.");
+            }
         }
     }
 
@@ -121,6 +133,7 @@ public class GitHubAdvisoryMirrorTask implements LoggableSubscriber {
             LOGGER.error("An error was encountered retrieving advisories");
             LOGGER.error("HTTP Status : " + response.getStatus() + " " + response.getStatusText());
             LOGGER.debug(queryTemplate);
+            mirroredWithoutErrors = false;
         } else {
             GitHubSecurityAdvisoryParser parser = new GitHubSecurityAdvisoryParser();
             final PageableList pageableList = parser.parse(response.getBody().getObject());
@@ -128,6 +141,23 @@ public class GitHubAdvisoryMirrorTask implements LoggableSubscriber {
             if (pageableList.isHasNextPage()) {
                 retrieveAdvisories(pageableList.getEndCursor());
             }
+        }
+        if (mirroredWithoutErrors) {
+            Notification.dispatch(new Notification()
+                    .scope(NotificationScope.SYSTEM)
+                    .group(NotificationGroup.DATASOURCE_MIRRORING)
+                    .title(NotificationConstants.Title.GITHUB_ADVISORY_MIRROR)
+                    .content("Mirroring of GitHub Advisories completed successfully")
+                    .level(NotificationLevel.INFORMATIONAL)
+            );
+        } else {
+            Notification.dispatch(new Notification()
+                    .scope(NotificationScope.SYSTEM)
+                    .group(NotificationGroup.DATASOURCE_MIRRORING)
+                    .title(NotificationConstants.Title.GITHUB_ADVISORY_MIRROR)
+                    .content("An error occurred mirroring the contents of GitHub Advisories. Check log for details.")
+                    .level(NotificationLevel.ERROR)
+            );
         }
     }
 
@@ -182,12 +212,13 @@ public class GitHubAdvisoryMirrorTask implements LoggableSubscriber {
 
         //vuln.setVulnerableVersions(advisory.getVulnerableVersions());
         //vuln.setPatchedVersions(advisory.getPatchedVersions());
-
-        // TODO - support multiple CWEs
-        if (advisory.getCwes() != null && advisory.getCwes().size() > 0) {
-            final CweResolver cweResolver = new CweResolver(qm);
-            final Cwe cwe = cweResolver.resolve(advisory.getCwes().get(0));
-            vuln.setCwe(cwe);
+        if (advisory.getCwes() != null) {
+            for (int i=0; i<advisory.getCwes().size(); i++) {
+                final Cwe cwe = CweResolver.getInstance().resolve(qm, advisory.getCwes().get(i));
+                if (cwe != null) {
+                    vuln.addCwe(cwe);
+                }
+            }
         }
 
         if (advisory.getSeverity() != null) {
@@ -286,6 +317,10 @@ public class GitHubAdvisoryMirrorTask implements LoggableSubscriber {
             } else if (PackageURL.StandardTypes.MAVEN.equals(purlType) && vuln.getPackageName().contains(":")) {
                 final String[] parts = vuln.getPackageName().split(":");
                 return PackageURLBuilder.aPackageURL().withType(purlType).withNamespace(parts[0]).withName(parts[1]).build();
+            } else if (PackageURL.StandardTypes.GOLANG.equals(purlType) && vuln.getPackageName().contains("/")) {
+                final String[] parts = vuln.getPackageName().split("/");
+                final String namespace = String.join("/", Arrays.copyOfRange(parts, 0, parts.length - 1));
+                return PackageURLBuilder.aPackageURL().withType(purlType).withNamespace(namespace).withName(parts[parts.length - 1]).build();
             } else {
                 return PackageURLBuilder.aPackageURL().withType(purlType).withName(vuln.getPackageName()).build();
             }
