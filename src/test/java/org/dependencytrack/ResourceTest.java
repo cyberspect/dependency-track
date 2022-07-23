@@ -24,6 +24,7 @@ import alpine.model.Permission;
 import alpine.model.Team;
 import alpine.server.auth.JsonWebToken;
 import alpine.server.auth.PasswordService;
+import alpine.server.persistence.PersistenceManagerFactory;
 import org.dependencytrack.auth.Permissions;
 import org.dependencytrack.persistence.QueryManager;
 import org.glassfish.jersey.test.JerseyTest;
@@ -42,11 +43,10 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.dependencytrack.PersistenceCapableTest.dbReset;
-
 public abstract class ResourceTest extends JerseyTest {
 
     protected final String V1_ANALYSIS = "/v1/analysis";
+    protected final String V1_BADGE = "/v1/badge";
     protected final String V1_BOM = "/v1/bom";
     protected final String V1_CALCULATOR = "/v1/calculator";
     protected final String V1_COMPONENT = "/v1/component";
@@ -81,6 +81,8 @@ public abstract class ResourceTest extends JerseyTest {
     protected final String TOTAL_COUNT_HEADER = "X-Total-Count";
     protected final String X_API_KEY = "X-Api-Key";
 
+    protected final String V1_TAG = "/v1/tag";
+
     protected QueryManager qm;
     protected ManagedUser testUser;
     protected String jwt;
@@ -94,7 +96,6 @@ public abstract class ResourceTest extends JerseyTest {
 
     @Before
     public void before() throws Exception {
-        dbReset();
         // Add a test user and team with API key. Optional if this is used, but its available to all tests.
         this.qm = new QueryManager();
         testUser = qm.createManagedUser("testuser", String.valueOf(PasswordService.createHash("testuser".toCharArray())));
@@ -105,9 +106,8 @@ public abstract class ResourceTest extends JerseyTest {
     }
 
     @After
-    public void after() throws Exception {
-        dbReset();
-        this.qm.close();
+    public void after() {
+        PersistenceManagerFactory.tearDown();
     }
 
     @Override

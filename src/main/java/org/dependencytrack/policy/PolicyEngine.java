@@ -24,6 +24,7 @@ import org.dependencytrack.model.Policy;
 import org.dependencytrack.model.PolicyCondition;
 import org.dependencytrack.model.PolicyViolation;
 import org.dependencytrack.model.Project;
+import org.dependencytrack.model.Tag;
 import org.dependencytrack.persistence.QueryManager;
 import org.dependencytrack.util.NotificationUtil;
 
@@ -54,24 +55,29 @@ public class PolicyEngine {
         evaluators.add(new CpePolicyEvaluator());
         evaluators.add(new SwidTagIdPolicyEvaluator());
         evaluators.add(new VersionPolicyEvaluator());
+        evaluators.add(new ComponentHashPolicyEvaluator());
+        evaluators.add(new CwePolicyEvaluator());
     }
 
-    public void evaluate(final List<Component> components) {
+    public List<PolicyViolation> evaluate(final List<Component> components) {
         LOGGER.info("Evaluating " + components.size() + " component(s) against applicable policies");
+        List<PolicyViolation> violations = new ArrayList<>();
         try (final QueryManager qm = new QueryManager()) {
             final List<Policy> policies = qm.getAllPolicies();
             for (final Component c: components) {
                 final Component component = qm.getObjectById(Component.class, c.getId());
-                this.evaluate(qm, policies, component);
+                violations = this.evaluate(qm, policies, component);
             }
         }
         LOGGER.info("Policy analysis complete");
+        return violations;
     }
 
-    private void evaluate(final QueryManager qm, final List<Policy> policies, final Component component) {
+    private List<PolicyViolation> evaluate(final QueryManager qm, final List<Policy> policies, final Component component) {
         final List<PolicyViolation> policyViolations = new ArrayList<>();
         for (final Policy policy : policies) {
-            if (policy.isGlobal() || isPolicyAssignedToProject(policy, component.getProject())) {
+            if (policy.isGlobal() || isPolicyAssignedToProject(policy, component.getProject())
+                    || isPolicyAssignedToProjectTag(policy, component.getProject())) {
                 LOGGER.debug("Evaluating component (" + component.getUuid() +") against policy (" + policy.getUuid() + ")");
                 final List<PolicyConditionViolation> policyConditionViolations = new ArrayList<>();
                 for (final PolicyEvaluator evaluator : evaluators) {
@@ -93,6 +99,7 @@ public class PolicyEngine {
         for (final PolicyViolation pv: qm.getAllPolicyViolations(component)) {
             NotificationUtil.analyzeNotificationCriteria(qm, pv);
         }
+        return policyViolations;
     }
 
     private boolean isPolicyAssignedToProject(Policy policy, Project project) {
@@ -117,12 +124,14 @@ public class PolicyEngine {
 
     private PolicyViolation.Type determineViolationType(final PolicyCondition.Subject subject) {
         switch(subject) {
+            case CWE:
             case SEVERITY:
                 return PolicyViolation.Type.SECURITY;
             case COORDINATES:
             case PACKAGE_URL:
             case CPE:
             case SWID_TAGID:
+            case COMPONENT_HASH:
             case VERSION:
                 return PolicyViolation.Type.OPERATIONAL;
             case LICENSE:
@@ -130,5 +139,15 @@ public class PolicyEngine {
                 return PolicyViolation.Type.LICENSE;
         }
         return null;
+    }
+
+    private boolean isPolicyAssignedToProjectTag(Policy policy, Project project) {
+        if (policy.getTags() == null || policy.getTags().size() == 0) {
+            return false;
+        }
+        for(Tag projectTag : project.getTags()){
+            return policy.getTags().stream().anyMatch(p -> p.getId() == projectTag.getId());
+        }
+        return false;
     }
 }
