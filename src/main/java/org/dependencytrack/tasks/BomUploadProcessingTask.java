@@ -26,6 +26,7 @@ import alpine.notification.NotificationLevel;
 import org.cyclonedx.BomParserFactory;
 import org.cyclonedx.parsers.Parser;
 import org.dependencytrack.event.BomUploadEvent;
+import org.dependencytrack.event.NewVulnerableDependencyAnalysisEvent;
 import org.dependencytrack.event.RepositoryMetaEvent;
 import org.dependencytrack.event.VulnerabilityAnalysisEvent;
 import org.dependencytrack.model.Bom;
@@ -71,6 +72,7 @@ public class BomUploadProcessingTask implements Subscriber {
             try {
                 final Project project = qm.getObjectByUuid(Project.class, event.getProjectUuid());
                 final List<Component> components;
+                final List<Component> newComponents = new ArrayList<>();
                 final List<Component> flattenedComponents = new ArrayList<>();
                 final List<ServiceComponent> services;
                 final List<ServiceComponent> flattenedServices = new ArrayList<>();
@@ -100,6 +102,7 @@ public class BomUploadProcessingTask implements Subscriber {
                                 .orElse(Classifier.APPLICATION);
                             project.setClassifier(classifier);
                         }
+                        project.setExternalReferences(ModelConverter.convertBomMetadataExternalReferences(cycloneDxBom));
                         serialNumnber = (cycloneDxBom.getSerialNumber() != null) ? cycloneDxBom.getSerialNumber().replaceFirst("urn:uuid:", "") : null;
                         components = ModelConverter.convertComponents(qm, cycloneDxBom, project);
                         services = ModelConverter.convertServices(qm, cycloneDxBom, project);
@@ -122,8 +125,9 @@ public class BomUploadProcessingTask implements Subscriber {
                 final Date date = new Date();
                 final Bom bom = qm.createBom(project, date, bomFormat, bomSpecVersion, bomVersion, serialNumnber);
                 for (final Component component: components) {
-                    processComponent(qm, bom, component, flattenedComponents);
+                    processComponent(qm, component, flattenedComponents, newComponents);
                 }
+                LOGGER.info("Identified " + newComponents.size() + " new components");
                 for (final ServiceComponent service: services) {
                     processService(qm, bom, service, flattenedServices);
                 }
@@ -146,7 +150,13 @@ public class BomUploadProcessingTask implements Subscriber {
                 final Project detachedProject = qm.detach(Project.class, project.getId());
                 final VulnerabilityAnalysisEvent vae = new VulnerabilityAnalysisEvent(detachedFlattenedComponent).project(detachedProject);
                 vae.setChainIdentifier(event.getChainIdentifier());
+                if (!newComponents.isEmpty()) {
+                    // Whether a new dependency is vulnerable or not can only be determined after
+                    // vulnerability analysis completed.
+                    vae.onSuccess(new NewVulnerableDependencyAnalysisEvent(newComponents));
+                }
                 Event.dispatch(vae);
+                Event.dispatch(new RepositoryMetaEvent(detachedFlattenedComponent));
                 LOGGER.info("Processed " + flattenedComponents.size() + " components and " + flattenedServices.size() + " services uploaded to project " + event.getProjectUuid());
                 Notification.dispatch(new Notification()
                         .scope(NotificationScope.PORTFOLIO)
@@ -165,17 +175,22 @@ public class BomUploadProcessingTask implements Subscriber {
         }
     }
 
-    private void processComponent(final QueryManager qm, final Bom bom, Component component,
-                                  final List<Component> flattenedComponents) {
+    private void processComponent(final QueryManager qm, Component component,
+                                  final List<Component> flattenedComponents,
+                                  final List<Component> newComponents) {
+        final boolean isNew = component.getUuid() == null;
         component.setInternal(InternalComponentIdentificationUtil.isInternalComponent(component, qm));
         component = qm.createComponent(component, false);
         final long oid = component.getId();
         // Refreshing the object by querying for it again is preventative
-        flattenedComponents.add(qm.getObjectById(Component.class, oid));
-        Event.dispatch(new RepositoryMetaEvent(component));
+        component = qm.getObjectById(Component.class, oid);
+        flattenedComponents.add(component);
+        if (isNew) {
+            newComponents.add(qm.detach(Component.class, component.getId()));
+        }
         if (component.getChildren() != null) {
             for (final Component child : component.getChildren()) {
-                processComponent(qm, bom, child, flattenedComponents);
+                processComponent(qm, child, flattenedComponents, newComponents);
             }
         }
     }

@@ -256,7 +256,7 @@ nav > ul {
 	&.current > a,
 	> a:active,
 	> a:hover {
-		color: #8BE9FD;
+		color: #00FFFF;
 	}
 
 	&.current > a,
@@ -474,4 +474,17 @@ img {
 
 .cms-editor-active .editor-link {
 	display: block;
+}
+
+.anchor {
+	color: #888;
+}
+
+h1:hover .anchor,
+h2:hover .anchor,
+h3:hover .anchor,
+h4:hover .anchor,
+h5:hover .anchor,
+h6:hover .anchor {
+	color: #3D598B;
 }

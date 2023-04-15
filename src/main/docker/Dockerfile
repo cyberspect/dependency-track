@@ -1,6 +1,6 @@
-FROM eclipse-temurin:11.0.15_10-jre-focal@sha256:f9ee9b3a0a0b0e36ae33256ed13f73df34059f427cfc39ccd43b953f5752e1f2 AS jre-build
+FROM eclipse-temurin:17.0.5_8-jre-focal@sha256:d98a588cd72194d040c83dad4eabed97c17677d592db7b964d31f12f9686dcbc AS jre-build
 
-FROM debian:bullseye-20220711-slim@sha256:f576b8067b77ff85c70725c976b7b6cde960898e2f19b9abab3fb148407614e2
+FROM debian:bullseye-20221205-slim@sha256:98de137b613dfc97f6b1eaa2f2d0a167eec4c5b72e2a34fd215aa51c3dcc3a86
 
 # Arguments that can be passed at build time
 # Directory names must end with / to avoid errors when ADDing and COPYing
@@ -15,8 +15,10 @@ ARG WAR_FILENAME=dependency-track-apiserver.jar
 ENV TZ=Etc/UTC \
     # Dependency-Track's default logging level
     LOGGING_LEVEL=INFO \
-    # Environment variables that can be passed at runtime
+    # JVM Options that are passed at runtime by default
     JAVA_OPTIONS="-XX:+UseParallelGC -XX:MaxRAMPercentage=90.0" \
+    # JVM Options that can be passed at runtime, while maintaining also those set in JAVA_OPTIONS
+    EXTRA_JAVA_OPTIONS="" \
     # The web context defaults to the root. To override, supply an alternative context which starts with a / but does not end with one
     # Example: /dtrack
     CONTEXT="/" \
@@ -59,7 +61,7 @@ USER ${UID}
 WORKDIR ${APP_DIR}
 
 # Launch Dependency-Track
-CMD java ${JAVA_OPTIONS} -DdependencyTrack.logging.level=${LOGGING_LEVEL} -jar ${WAR_FILENAME} -context ${CONTEXT} -port 8081
+CMD java ${JAVA_OPTIONS} ${EXTRA_JAVA_OPTIONS} --add-opens java.base/java.util.concurrent=ALL-UNNAMED -DdependencyTrack.logging.level=${LOGGING_LEVEL} -jar ${WAR_FILENAME} -context ${CONTEXT} -port 8081
 
 # Specify which port Dependency-Track listens on
 EXPOSE 8081

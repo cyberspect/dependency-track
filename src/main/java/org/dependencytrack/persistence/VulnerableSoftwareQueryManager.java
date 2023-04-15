@@ -25,6 +25,7 @@ import com.github.packageurl.PackageURL;
 import org.dependencytrack.event.IndexEvent;
 import org.dependencytrack.model.Cpe;
 import org.dependencytrack.model.Cwe;
+import org.dependencytrack.model.Vulnerability;
 import org.dependencytrack.model.VulnerableSoftware;
 import org.h2.util.StringUtils;
 
@@ -75,6 +76,7 @@ final class VulnerableSoftwareQueryManager extends QueryManager implements IQuer
      */
     public Cpe getCpeBy23(String cpe23) {
         final Query<Cpe> query = pm.newQuery(Cpe.class, "cpe23 == :cpe23");
+        query.setRange(0, 1);
         return singleResult(query.execute(cpe23));
     }
 
@@ -126,6 +128,7 @@ final class VulnerableSoftwareQueryManager extends QueryManager implements IQuer
                                                            String versionStartExcluding, String versionStartIncluding) {
         final Query<VulnerableSoftware> query = pm.newQuery(VulnerableSoftware.class);
         query.setFilter("cpe23 == :cpe23 && versionEndExcluding == :versionEndExcluding && versionEndIncluding == :versionEndIncluding && versionStartExcluding == :versionStartExcluding && versionStartIncluding == :versionStartIncluding");
+        query.setRange(0, 1);
         return singleResult(query.executeWithArray(cpe23, versionEndExcluding, versionEndIncluding, versionStartExcluding, versionStartIncluding));
     }
 
@@ -165,7 +168,28 @@ final class VulnerableSoftwareQueryManager extends QueryManager implements IQuer
                                                                    String versionEndExcluding, String versionEndIncluding,
                                                                    String versionStartExcluding, String versionStartIncluding) {
         final Query<VulnerableSoftware> query = pm.newQuery(VulnerableSoftware.class, "purlType == :purlType && purlNamespace == :purlNamespace && purlName == :purlName && versionEndExcluding == :versionEndExcluding && versionEndIncluding == :versionEndIncluding && versionStartExcluding == :versionStartExcluding && versionStartIncluding == :versionStartIncluding");
+        query.setRange(0, 1);
         return singleResult(query.executeWithArray(purlType, purlNamespace, purlName, versionEndExcluding, versionEndIncluding, versionStartExcluding, versionStartIncluding));
+    }
+
+    /**
+     * Fetch all {@link VulnerableSoftware} instances associated with a given {@link Vulnerability}.
+     *
+     * @param source The source of the vulnerability
+     * @param vulnId The ID of the vulnerability
+     * @return a {@link List} of {@link VulnerableSoftware}s
+     */
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<VulnerableSoftware> getVulnerableSoftwareByVulnId(final String source, final String vulnId) {
+        final Query<?> query = pm.newQuery(Query.JDOQL, """
+                SELECT FROM org.dependencytrack.model.VulnerableSoftware
+                WHERE vulnerabilities.contains(vuln)
+                    && vuln.source == :source && vuln.vulnId == :vulnId
+                VARIABLES org.dependencytrack.model.Vulnerability vuln
+                """);
+        query.setParameters(source, vulnId);
+        return (List<VulnerableSoftware>) query.executeList();
     }
 
     /**
@@ -245,6 +269,7 @@ final class VulnerableSoftwareQueryManager extends QueryManager implements IQuer
      */
     public Cwe getCweById(int cweId) {
         final Query<Cwe> query = pm.newQuery(Cwe.class, "cweId == :cweId");
+        query.setRange(0, 1);
         return singleResult(query.execute(cweId));
     }
 

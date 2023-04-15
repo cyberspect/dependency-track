@@ -19,12 +19,18 @@
 package org.dependencytrack.model;
 
 import org.dependencytrack.PersistenceCapableTest;
+import org.dependencytrack.persistence.CweImporter;
 import org.dependencytrack.tasks.scanners.AnalyzerIdentity;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
+
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.Map;
 import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class FindingTest extends PersistenceCapableTest {
 
@@ -32,8 +38,14 @@ public class FindingTest extends PersistenceCapableTest {
     private Date attributedOn = new Date();
     private Finding finding = new Finding(projectUuid, "component-uuid", "component-name", "component-group",
             "component-version", "component-purl", "component-cpe", "vuln-uuid", "vuln-source", "vuln-vulnId", "vuln-title",
-            "vuln-subtitle", "vuln-description", "vuln-recommendation", Severity.HIGH, "7.2", "8.4",
+            "vuln-subtitle", "vuln-description", "vuln-recommendation", Severity.HIGH, BigDecimal.valueOf(7.2), BigDecimal.valueOf(8.4), BigDecimal.valueOf(1.25), BigDecimal.valueOf(1.75), BigDecimal.valueOf(1.3),
             "0.5", "0.9", null, AnalyzerIdentity.INTERNAL_ANALYZER, attributedOn, null, null, AnalysisState.NOT_AFFECTED, true);
+
+
+    @Before
+    public void setUp() throws Exception {
+        new CweImporter().processCweDefinitions();
+    }
 
     @Test
     public void testComponent() {
@@ -55,6 +67,11 @@ public class FindingTest extends PersistenceCapableTest {
         Assert.assertEquals("vuln-subtitle", map.get("subtitle"));
         //Assert.assertEquals("vuln-description", map.get("description"));
         //Assert.assertEquals("vuln-recommendation", map.get("recommendation"));
+        Assert.assertEquals(BigDecimal.valueOf(7.2), map.get("cvssV2BaseScore"));
+        Assert.assertEquals(BigDecimal.valueOf(8.4), map.get("cvssV3BaseScore"));
+        Assert.assertEquals(BigDecimal.valueOf(1.25), map.get("owaspLikelihoodScore"));
+        Assert.assertEquals(BigDecimal.valueOf(1.75), map.get("owaspTechnicalImpactScore"));
+        Assert.assertEquals(BigDecimal.valueOf(1.3), map.get("owaspBusinessImpactScore"));
         Assert.assertEquals(Severity.HIGH.name(), map.get("severity"));
         Assert.assertEquals(1, map.get("severityRank"));
     }
@@ -70,4 +87,27 @@ public class FindingTest extends PersistenceCapableTest {
     public void testMatrix() {
         Assert.assertEquals(projectUuid + ":component-uuid" + ":vuln-uuid", finding.getMatrix());
     }
+
+    @Test
+    public void testGetCwes() {
+        assertThat(Finding.getCwes("787,79,,89,"))
+                .hasSize(3)
+                .satisfiesExactly(
+                        cwe -> assertThat(cwe.getCweId()).isEqualTo(787),
+                        cwe -> assertThat(cwe.getCweId()).isEqualTo(79),
+                        cwe -> assertThat(cwe.getCweId()).isEqualTo(89)
+                );
+    }
+
+    @Test
+    public void testGetCwesWhenInputIsEmpty() {
+        assertThat(Finding.getCwes("")).isNull();
+        assertThat(Finding.getCwes(",")).isNull();
+    }
+
+    @Test
+    public void testGetCwesWhenInputIsNull() {
+        assertThat(Finding.getCwes(null)).isNull();
+    }
+
 }

@@ -23,6 +23,8 @@ import alpine.model.Team;
 import alpine.server.json.TrimmedStringDeserializer;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonIncludeProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.SerializerProvider;
@@ -45,6 +47,7 @@ import javax.jdo.annotations.PersistenceCapable;
 import javax.jdo.annotations.Persistent;
 import javax.jdo.annotations.PrimaryKey;
 import javax.jdo.annotations.Unique;
+import javax.jdo.annotations.Serialized;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
@@ -85,6 +88,11 @@ import java.util.UUID;
                 @Persistent(name = "properties"),
                 @Persistent(name = "tags"),
                 @Persistent(name = "accessTeams")
+        }),
+        @FetchGroup(name = "METRICS_UPDATE", members = {
+                @Persistent(name = "id"),
+                @Persistent(name = "lastInheritedRiskScore"),
+                @Persistent(name = "uuid")
         })
 })
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -96,7 +104,8 @@ public class Project implements Serializable {
      * Defines JDO fetch groups for this class.
      */
     public enum FetchGroup {
-        ALL
+        ALL,
+        METRICS_UPDATE
     }
 
     @PrimaryKey
@@ -189,6 +198,7 @@ public class Project implements Serializable {
 
     @Persistent
     @Column(name = "PARENT_PROJECT_ID")
+    @JsonIncludeProperties(value = {"name", "version", "uuid"})
     private Project parent;
 
     @Persistent(mappedBy = "parent")
@@ -240,7 +250,20 @@ public class Project implements Serializable {
     @JsonIgnore
     private List<Team> accessTeams;
 
+    @Persistent(defaultFetchGroup = "true")
+    @Column(name = "EXTERNAL_REFERENCES")
+    @Serialized
+    private List<ExternalReference> externalReferences;
+
+    @JsonProperty("parentUuid")
+    private UUID getParentUuid() {
+        return (this.getParent() == null) ? null : this.getParent().getUuid();
+    }
+
     private transient ProjectMetrics metrics;
+
+    @JsonIgnore
+    private transient List<Component> dependencyGraph;
 
     public long getId() {
         return id;
@@ -415,6 +438,14 @@ public class Project implements Serializable {
         this.lastInheritedRiskScore = lastInheritedRiskScore;
     }
 
+    public List<ExternalReference> getExternalReferences() {
+        return externalReferences;
+    }
+
+    public void setExternalReferences(List<ExternalReference> externalReferences) {
+        this.externalReferences = externalReferences;
+    }
+
     public Boolean isActive() {
         return active;
     }
@@ -444,6 +475,14 @@ public class Project implements Serializable {
             this.accessTeams = new ArrayList<>();
         }
         this.accessTeams.add(accessTeam);
+    }
+
+    public List<Component> getDependencyGraph() {
+        return dependencyGraph;
+    }
+
+    public void setDependencyGraph(List<Component> dependencyGraph) {
+        this.dependencyGraph = dependencyGraph;
     }
 
     @Override

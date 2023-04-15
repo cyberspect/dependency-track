@@ -18,7 +18,7 @@ This document primarily covers the API server. Please refer to the frontend repo
 
 There are a few things you'll need on your journey:
 
-* JDK 11+ ([Temurin](https://adoptium.net/temurin/releases) distribution recommended)
+* JDK 17+ ([Temurin](https://adoptium.net/temurin/releases) distribution recommended)
 * Maven (comes bundled with IntelliJ and Eclipse)
 * A Java IDE of your preference (we recommend IntelliJ, but any other IDE is fine as well)
 * Docker (optional)
@@ -117,6 +117,34 @@ mvn clean verify -P enhance
 Depending on your machine, this will take roughly 10-30min. Unless you modified central parts of the application,
 starting single tests separately via IDE is a better choice. 
 
+## DataNucleus Bytecode Enhancement
+
+Occasionally when running tests without Maven from within your IDE, you will run into failures due to exceptions
+similar to this one:
+
+```
+org.datanucleus.exceptions.NucleusUserException: Found Meta-Data for class org.dependencytrack.model.Component but this class is either not enhanced or you have multiple copies of the persistence API jar in your CLASSPATH!! Make sure all persistable classes are enhanced before running DataNucleus and/or the CLASSPATH is correct.
+```
+
+This happens because DataNucleus requires classes annotated with `@PersistenceCapable` to be [enhanced](https://www.datanucleus.org/products/accessplatform/jdo/enhancer.html).
+Enhancement is performed on compiled bytecode and thus has to be performed post-compilation 
+(`process-classes` [lifecycle phase](https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html#Lifecycle_Reference) in Maven). 
+During a Maven build, the [DataNucleus Maven plugin](https://www.datanucleus.org/products/accessplatform/jdo/enhancer.html#maven)
+takes care of this (that's also why `-P enhance` is required in all Maven commands).
+
+Because most IDEs run their own build when executing tests, effectively bypassing Maven, bytecode enhancement is not
+performed, and exceptions as that shown above are raised. If this happens, you can manually kick off the bytecode
+enhancement like this:
+
+```shell
+mvn clean process-classes -P enhance
+```
+
+Now just execute the test again, and it should just work. 
+
+> If you're still running into issues, ensure that your IDE is not cleaning the workspace 
+> (removing the `target` directory) before executing the test. 
+
 ## Building Container Images
 
 Ensure you've built either API server or the bundled distribution, or both.
@@ -159,7 +187,7 @@ For local development, you may want to run this instead:
 
 This will start a local webserver that listens on `127.0.0.1:4000` and rebuilds the site whenever you make changes.
 
-> To be able to build the docs with Jekyll, you'll need [Ruby](https://www.ruby-lang.org/en/),
+> To be able to build the docs with Jekyll, you'll need [Ruby 2](https://www.ruby-lang.org/en/),
 > [RubyGems](https://rubygems.org/pages/download) and [Bundler](https://bundler.io/) installed.
 > If you can't be bothered to install all of this, you can use the 
 > [Jekyll container image](https://hub.docker.com/r/jekyll/jekyll) instead, e.g.:

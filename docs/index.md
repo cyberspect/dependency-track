@@ -38,6 +38,8 @@ CI/CD environments.
   * [National Vulnerability Database] (NVD)
   * [GitHub Advisories]
   * [Sonatype OSS Index]
+  * [Snyk]
+  * [OSV]
   * [VulnDB] from [Risk Based Security]
   * More coming soon.
 * Helps to prioritize mitigation by incorporating support for the [Exploit Prediction Scoring System (EPSS)]
@@ -64,7 +66,7 @@ CI/CD environments.
   * Trust boundary traversal
   * Authentication requirements
 * Includes a comprehensive auditing workflow for triaging results
-* Configurable notifications supporting Slack, Microsoft Teams, Mattermost, Webhooks, and Email
+* Configurable notifications supporting Slack, Microsoft Teams, Mattermost, Webhooks, Email and Jira
 * Supports standardized SPDX license ID’s and tracks license use by component
 * Easy to read metrics for components, projects, and portfolio
 * Native support for Kenna Security, Fortify SSC, ThreadFix, and DefectDojo
@@ -77,6 +79,8 @@ CI/CD environments.
 [National Vulnerability Database]: https://nvd.nist.gov
 [GitHub Advisories]: https://www.github.com/advisories
 [Sonatype OSS Index]: https://ossindex.sonatype.org
+[Snyk]: https://snyk.io
+[OSV]: https://osv.dev
 [VulnDB]: https://vulndb.cyberriskanalytics.com
 [Risk Based Security]: https://www.riskbasedsecurity.com
 [Component Analysis]: https://owasp.org/www-community/Component_Analysis
