@@ -112,6 +112,7 @@ public class RepositoryQueryManager extends QueryManager implements IQueryManage
      */
     public boolean repositoryExist(RepositoryType type, String identifier) {
         final Query<Repository> query = pm.newQuery(Repository.class, "type == :type && identifier == :identifier");
+        query.setRange(0, 1);
         return singleResult(query.execute(type, identifier)) != null;
     }
 
@@ -185,6 +186,7 @@ public class RepositoryQueryManager extends QueryManager implements IQueryManage
     public RepositoryMetaComponent getRepositoryMetaComponent(RepositoryType repositoryType, String namespace, String name) {
         final Query<RepositoryMetaComponent> query = pm.newQuery(RepositoryMetaComponent.class);
         query.setFilter("repositoryType == :repositoryType && namespace == :namespace && name == :name");
+        query.setRange(0, 1);
         return singleResult(query.execute(repositoryType, namespace, name));
     }
 
@@ -195,7 +197,7 @@ public class RepositoryQueryManager extends QueryManager implements IQueryManage
      */
     public synchronized RepositoryMetaComponent synchronizeRepositoryMetaComponent(final RepositoryMetaComponent transientRepositoryMetaComponent) {
         final RepositoryMetaComponent metaComponent = getRepositoryMetaComponent(transientRepositoryMetaComponent.getRepositoryType(),
-                transientRepositoryMetaComponent.getNamespace(), transientRepositoryMetaComponent.getName());;
+                transientRepositoryMetaComponent.getNamespace(), transientRepositoryMetaComponent.getName());
         if (metaComponent != null) {
             metaComponent.setRepositoryType(transientRepositoryMetaComponent.getRepositoryType());
             metaComponent.setNamespace(transientRepositoryMetaComponent.getNamespace());
