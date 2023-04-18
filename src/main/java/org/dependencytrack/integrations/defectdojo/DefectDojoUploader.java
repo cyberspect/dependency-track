@@ -27,24 +27,39 @@ import org.dependencytrack.model.Finding;
 import org.dependencytrack.model.Project;
 import org.dependencytrack.model.ProjectProperty;
 import org.json.JSONObject;
+
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.dependencytrack.model.ConfigPropertyConstants.*;
+import static org.dependencytrack.model.ConfigPropertyConstants.DEFECTDOJO_API_KEY;
+import static org.dependencytrack.model.ConfigPropertyConstants.DEFECTDOJO_ENABLED;
+import static org.dependencytrack.model.ConfigPropertyConstants.DEFECTDOJO_REIMPORT_ENABLED;
+import static org.dependencytrack.model.ConfigPropertyConstants.DEFECTDOJO_URL;
 
 public class DefectDojoUploader extends AbstractIntegrationPoint implements ProjectFindingUploader {
 
     private static final Logger LOGGER = Logger.getLogger(DefectDojoUploader.class);
     private static final String ENGAGEMENTID_PROPERTY = "defectdojo.engagementId";
     private static final String REIMPORT_PROPERTY = "defectdojo.reimport";
+    private static final String DO_NOT_REACTIVATE_PROPERTY = "defectdojo.doNotReactivate";
+
 
     public boolean isReimportConfigured(final Project project) {
         final ProjectProperty reimport = qm.getProjectProperty(project, DEFECTDOJO_ENABLED.getGroupName(), REIMPORT_PROPERTY);
         if (reimport != null) {
             return Boolean.parseBoolean(reimport.getPropertyValue());
+        } else {
+            return false;
+        }
+    }
+
+    public boolean isDoNotReactivateConfigured(final Project project) {
+        final ProjectProperty reactivate = qm.getProjectProperty(project, DEFECTDOJO_ENABLED.getGroupName(), DO_NOT_REACTIVATE_PROPERTY);
+        if (reactivate != null) {
+            return Boolean.parseBoolean(reactivate.getPropertyValue());
         } else {
             return false;
         }
@@ -93,7 +108,7 @@ public class DefectDojoUploader extends AbstractIntegrationPoint implements Proj
                 if (testId.equals("")) {
                     client.uploadDependencyTrackFindings(apiKey.getPropertyValue(), engagementId.getPropertyValue(), payload);
                 } else {
-                    client.reimportDependencyTrackFindings(apiKey.getPropertyValue(), engagementId.getPropertyValue(), payload, testId);
+                    client.reimportDependencyTrackFindings(apiKey.getPropertyValue(), engagementId.getPropertyValue(), payload, testId, isDoNotReactivateConfigured(project));
                 }
             } else {
                 client.uploadDependencyTrackFindings(apiKey.getPropertyValue(), engagementId.getPropertyValue(), payload);

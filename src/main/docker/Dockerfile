@@ -1,6 +1,6 @@
-FROM eclipse-temurin:17.0.5_8-jre-focal@sha256:d98a588cd72194d040c83dad4eabed97c17677d592db7b964d31f12f9686dcbc AS jre-build
+FROM eclipse-temurin:17.0.6_10-jre-focal@sha256:22942ca3ffac6e593063e33a225c458e315afa2c0dddfdbe15d337dd9130c70c AS jre-build
 
-FROM debian:bullseye-20221205-slim@sha256:98de137b613dfc97f6b1eaa2f2d0a167eec4c5b72e2a34fd215aa51c3dcc3a86
+FROM debian:bullseye-20230411-slim@sha256:9404b05bd09b57c76eccc0c5505b3c88b5feccac808d9b193a4fbac87bb44745
 
 # Arguments that can be passed at build time
 # Directory names must end with / to avoid errors when ADDing and COPYing
@@ -67,7 +67,7 @@ CMD java ${JAVA_OPTIONS} ${EXTRA_JAVA_OPTIONS} --add-opens java.base/java.util.c
 EXPOSE 8081
 
 # Add a healthcheck using the Dependency-Track version API
-HEALTHCHECK --interval=5m --timeout=3s CMD wget --proxy off -q -O /dev/null http://127.0.0.1:8081${CONTEXT}api/version || exit 1
+HEALTHCHECK --interval=30s --timeout=3s CMD wget --no-proxy -q -O /dev/null http://127.0.0.1:8080${CONTEXT}health || exit 1
 
 # metadata labels
 LABEL \

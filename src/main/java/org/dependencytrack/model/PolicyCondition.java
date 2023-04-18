@@ -63,7 +63,7 @@ public class PolicyCondition implements Serializable {
     }
 
     public enum Subject {
-        //AGE,
+        AGE,
         //ANALYZER,
         //BOM,
         COORDINATES,
@@ -76,7 +76,8 @@ public class PolicyCondition implements Serializable {
         SWID_TAGID,
         VERSION,
         COMPONENT_HASH,
-        CWE
+        CWE,
+        VULNERABILITY_ID
     }
 
     @PrimaryKey

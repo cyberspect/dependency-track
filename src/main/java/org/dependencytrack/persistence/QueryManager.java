@@ -29,6 +29,7 @@ import alpine.persistence.AlpineQueryManager;
 import alpine.persistence.PaginatedResult;
 import alpine.resources.AlpineRequest;
 import com.github.packageurl.PackageURL;
+import org.datanucleus.PropertyNames;
 import org.datanucleus.api.jdo.JDOQuery;
 import org.dependencytrack.event.IndexEvent;
 import org.dependencytrack.model.AffectedVersionAttribution;
@@ -76,6 +77,7 @@ import org.dependencytrack.notification.NotificationScope;
 import org.dependencytrack.notification.publisher.Publisher;
 import org.dependencytrack.tasks.scanners.AnalyzerIdentity;
 
+import javax.jdo.FetchPlan;
 import javax.jdo.PersistenceManager;
 import javax.jdo.Query;
 import javax.jdo.Transaction;
@@ -84,6 +86,7 @@ import java.security.Principal;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -310,6 +313,22 @@ public class QueryManager extends AlpineQueryManager {
             cacheQueryManager = (request == null) ? new CacheQueryManager(getPersistenceManager()) : new CacheQueryManager(getPersistenceManager(), request);
         }
         return cacheQueryManager;
+    }
+
+    /**
+     * Disables the second level cache for this {@link QueryManager} instance.
+     * <p>
+     * Disabling the L2 cache is useful in situations where large amounts of objects
+     * are created or updated in close succession, and it's unlikely that they'll be
+     * accessed again anytime soon. Keeping those objects in cache would unnecessarily
+     * blow up heap usage.
+     *
+     * @return This {@link QueryManager} instance
+     * @see <a href="https://www.datanucleus.org/products/accessplatform_6_0/jdo/persistence.html#cache_level2">L2 Cache docs</a>
+     */
+    public QueryManager withL2CacheDisabled() {
+        pm.setProperty(PropertyNames.PROPERTY_CACHE_L2_TYPE, "none");
+        return this;
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1055,8 +1074,8 @@ public class QueryManager extends AlpineQueryManager {
         return getMetricsQueryManager().getDependencyMetricsSince(component, since);
     }
 
-    public void synchronizeVulnerabilityMetrics(VulnerabilityMetrics metric) {
-        getMetricsQueryManager().synchronizeVulnerabilityMetrics(metric);
+    public void synchronizeVulnerabilityMetrics(List<VulnerabilityMetrics> metrics) {
+        getMetricsQueryManager().synchronizeVulnerabilityMetrics(metrics);
     }
 
     void deleteMetrics(Project project) {
@@ -1246,6 +1265,36 @@ public class QueryManager extends AlpineQueryManager {
     }
 
     /**
+     * Detach a persistent object using the provided fetch groups.
+     * <p>
+     * {@code fetchGroups} will override any other fetch groups set on the {@link PersistenceManager},
+     * even the default one. If inclusion of the default fetch group is desired, it must be
+     * included in {@code fetchGroups} explicitly.
+     * <p>
+     * Eventually, this may be moved to {@link alpine.persistence.AbstractAlpineQueryManager}.
+     *
+     * @param object      The persistent object to detach
+     * @param fetchGroups Fetch groups to use for this operation
+     * @param <T>         Type of the object
+     * @return The detached object
+     * @since 4.8.0
+     */
+    public <T> T detachWithGroups(final T object, final List<String> fetchGroups) {
+        final int origDetachOptions = pm.getFetchPlan().getDetachmentOptions();
+        final Set<?> origFetchGroups = pm.getFetchPlan().getGroups();
+        try {
+            pm.getFetchPlan().setDetachmentOptions(FetchPlan.DETACH_LOAD_FIELDS);
+            pm.getFetchPlan().setGroups(fetchGroups);
+            return pm.detachCopy(object);
+        } finally {
+            // Restore previous settings to not impact other operations performed
+            // by this persistence manager.
+            pm.getFetchPlan().setDetachmentOptions(origDetachOptions);
+            pm.getFetchPlan().setGroups(origFetchGroups);
+        }
+    }
+
+    /**
      * Convenience method to execute a given {@link Runnable} within the context of a {@link Transaction}.
      * <p>
      * Eventually, this may be moved to {@link alpine.persistence.AbstractAlpineQueryManager}.
@@ -1263,6 +1312,23 @@ public class QueryManager extends AlpineQueryManager {
             if (trx.isActive()) {
                 trx.rollback();
             }
+        }
+    }
+
+    /**
+     * Convenience method to ensure that any active transaction is rolled back.
+     * <p>
+     * Calling this method may sometimes be necessary due to {@link AlpineQueryManager#persist(Object)}
+     * no performing a rollback in case committing the transaction fails. This can impact other persistence
+     * operations performed in the same session (e.g. {@code NucleusTransactionException: Invalid state. Transaction has already started}).
+     *
+     * @see <a href="https://github.com/DependencyTrack/dependency-track/issues/2677">Issue 2677</a>
+     * @since 4.8.0
+     */
+    public void ensureNoActiveTransaction() {
+        final Transaction trx = pm.currentTransaction();
+        if (trx != null && trx.isActive()) {
+            trx.rollback();
         }
     }
 
