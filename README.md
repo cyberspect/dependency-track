@@ -32,6 +32,8 @@ CI/CD environments.
 ![alt text](./docs/images/integrations.png)
 
 ## Features
+* Consumes and produces [CycloneDX] Software Bill of Materials (SBOM)
+* Consumes and produces [CycloneDX Vulnerability Exploitability Exchange (VEX)](https://cyclonedx.org/capabilities/vex/)
 * Component support for:
   * Applications
   * Libraries
@@ -41,6 +43,7 @@ CI/CD environments.
   * Firmware
   * Files
   * Hardware
+  * Services
 * Tracks component usage across every application in an organizations portfolio
 * Quickly identify what is affected, and where
 * Identifies multiple forms of risk including
@@ -57,10 +60,12 @@ CI/CD environments.
   * [OSV]
   * [VulnDB] from [Risk Based Security]
   * More coming soon.
+* Helps to prioritize mitigation by incorporating support for the [Exploit Prediction Scoring System (EPSS)](https://www.first.org/epss/)
+* Maintain a private vulnerability database of vulnerability components
 * Robust policy engine with support for global and per-project policies
   * Security risk and compliance
   * License risk and compliance
-  * Operational risk and compliance  
+  * Operational risk and compliance
 * Ecosystem agnostic with built-in repository support for:
   * Cargo (Rust)
   * Composer (PHP)
@@ -68,9 +73,10 @@ CI/CD environments.
   * Hex (Erlang/Elixir)
   * Maven (Java)
   * NPM (Javascript)
+  * CPAN (Perl)
   * NuGet (.NET)
   * Pypi (Python)
-  * More coming soon.  
+  * More coming soon.
 * Identifies APIs and external service components including:
   * Service provider
   * Endpoint URIs
@@ -79,9 +85,8 @@ CI/CD environments.
   * Trust boundary traversal
   * Authentication requirements
 * Includes a comprehensive auditing workflow for triaging results
-* Configurable notifications supporting Slack, Microsoft Teams, Mattermost, WebEx, Webhooks and Email
+* Configurable notifications supporting Slack, Microsoft Teams, Mattermost, Webhooks, Webex, Email and Jira
 * Supports standardized SPDX license ID’s and tracks license use by component
-* Supports importing [CycloneDX] Software Bill of Materials (SBOM)
 * Easy to read metrics for components, projects, and portfolio
 * Native support for Kenna Security, Fortify SSC, ThreadFix, and DefectDojo
 * API-first design facilitates easy integration with other systems
@@ -139,7 +144,7 @@ Dependency-Track has three distribution variants. They are:
 
 | Package    | Package Format          | Recommended | Supported | Docker | Download |
 |:-----------|:------------------------|:-----------:|:---------:|:------:|:--------:|
-| API Server | Executable WAR          |      ✅      |     ✅     |   ✅    |    ✅     | 
+| API Server | Executable WAR          |      ✅      |     ✅     |   ✅    |    ✅     |
 | Frontend   | Single Page Application |      ✅      |     ✅     |   ✅    |    ✅     |
 | Bundled    | Executable WAR          |      ❌      |    ☑️     |   ✅    |    ✅     |
 
@@ -150,7 +155,7 @@ interface. This variant is new as of Dependency-Track v4.0.
 
 #### Frontend
 
-The Frontend is the user interface that is accessible in a web browser. The Frontend is a Single Page Application (SPA)
+The [Frontend](https://github.com/DependencyTrack/frontend) is the user interface that is accessible in a web browser. The Frontend is a Single Page Application (SPA)
 that can be deployed independently of the Dependency-Track API Server. This variant is new as of Dependency-Track v3.8.
 
 #### Bundled
