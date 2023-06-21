@@ -61,7 +61,7 @@ USER ${UID}
 WORKDIR ${APP_DIR}
 
 # Launch Dependency-Track
-CMD java ${JAVA_OPTIONS} ${EXTRA_JAVA_OPTIONS} --add-opens java.base/java.util.concurrent=ALL-UNNAMED -DdependencyTrack.logging.level=${LOGGING_LEVEL} -jar ${WAR_FILENAME} -context ${CONTEXT} -port 8081
+CMD exec java ${JAVA_OPTIONS} ${EXTRA_JAVA_OPTIONS} --add-opens java.base/java.util.concurrent=ALL-UNNAMED -DdependencyTrack.logging.level=${LOGGING_LEVEL} -jar ${WAR_FILENAME} -context ${CONTEXT} -port 8081
 
 # Specify which port Dependency-Track listens on
 EXPOSE 8081
