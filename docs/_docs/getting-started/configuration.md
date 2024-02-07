@@ -68,6 +68,12 @@ alpine.data.directory=~/.dependency-track
 # Default is "<alpine.data.directory>/keys/secret.key".
 # alpine.secret.key.path=/var/run/secrets/secret.key
 
+# Optional
+# Defines the prefix to be used for API keys. A maximum prefix length of 251
+# characters is supported.
+# The prefix may also be left empty.
+alpine.api.key.prefix=odt_
+
 # Required
 # Defines the interval (in seconds) to log general heath information. If value
 # equals 0, watchdog logging will be disabled.
@@ -150,16 +156,17 @@ alpine.database.pool.max.lifetime=600000
 # alpine.database.pool.nontx.max.lifetime=
 
 # Optional
-# When authentication is enforced, API keys are required for automation, and
-# the user interface will prevent anonymous access by prompting for login
-# credentials.
-alpine.enforce.authentication=true
-
-# Optional
-# When authorization is enforced, team membership for both API keys and user
-# accounts are restricted to what the team itself has access to. To enforce 
-# authorization, the enforce.authentication property (above) must be true.
-alpine.enforce.authorization=true
+# Controls the 2nd level cache type used by DataNucleus, the Object Relational Mapper (ORM).
+# See https://www.datanucleus.org/products/accessplatform_6_0/jdo/persistence.html#cache_level2
+# Values supported by Dependency-Track are "soft" (default), "weak", and "none".
+#
+# Setting this property to "none" may help in reducing the memory footprint of Dependency-Track,
+# but has the potential to slow down database operations.
+# Size of the cache may be monitored through the "datanucleus_cache_second_level_entries" metric,
+# refer to https://docs.dependencytrack.org/getting-started/monitoring/#metrics for details.
+#
+# DO NOT CHANGE UNLESS THERE IS A GOOD REASON TO.
+# alpine.datanucleus.cache.level2.type=
 
 # Required
 # Specifies the number of bcrypt rounds to use when hashing a users password.

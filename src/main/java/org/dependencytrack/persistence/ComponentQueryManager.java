@@ -27,6 +27,7 @@ import alpine.persistence.PaginatedResult;
 import alpine.resources.AlpineRequest;
 import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
+import org.apache.commons.lang3.tuple.Pair;
 import org.dependencytrack.event.IndexEvent;
 import org.dependencytrack.model.Component;
 import org.dependencytrack.model.ComponentIdentity;
@@ -34,20 +35,22 @@ import org.dependencytrack.model.ConfigPropertyConstants;
 import org.dependencytrack.model.Project;
 import org.dependencytrack.model.RepositoryMetaComponent;
 import org.dependencytrack.model.RepositoryType;
+import org.dependencytrack.resources.v1.vo.DependencyGraphResponse;
 
 import javax.jdo.FetchPlan;
 import javax.jdo.PersistenceManager;
 import javax.jdo.Query;
+import javax.json.Json;
+import javax.json.JsonArray;
+import javax.json.JsonValue;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.HashSet;
-import javax.json.Json;
-import javax.json.JsonValue;
-import javax.json.JsonArray;
+import java.util.UUID;
 
 final class ComponentQueryManager extends QueryManager implements IQueryManager {
 
@@ -133,17 +136,49 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
     /**
      * Returns a List of Dependency for the specified Project.
      * @param project the Project to retrieve dependencies of
+     * @param includeMetrics Optionally includes third-party metadata about the component from external repositories
      * @return a List of Dependency objects
      */
     public PaginatedResult getComponents(final Project project, final boolean includeMetrics) {
+        return getComponents(project, includeMetrics, false, false);
+    }
+    /**
+     * Returns a List of Dependency for the specified Project.
+     * @param project the Project to retrieve dependencies of
+     * @param includeMetrics Optionally includes third-party metadata about the component from external repositories
+     * @param onlyOutdated Optionally exclude recent components so only outdated components are shown
+     * @param onlyDirect Optionally exclude transitive dependencies so only direct dependencies are shown
+     * @return a List of Dependency objects
+     */
+    public PaginatedResult getComponents(final Project project, final boolean includeMetrics, final boolean onlyOutdated, final boolean onlyDirect) {
         final PaginatedResult result;
-        final Query<Component> query = pm.newQuery(Component.class, "project == :project");
+        String querySring ="SELECT FROM org.dependencytrack.model.Component WHERE project == :project ";
+        if (filter != null) {
+            querySring += " && (project == :project) && name.toLowerCase().matches(:name)";
+        }
+        if (onlyOutdated) {
+            // Components are considered outdated when metadata does exists, but the version is different than latestVersion
+            // Different should always mean version < latestVersion
+            // Hack JDO using % instead of .* to get the SQL LIKE clause working:
+            querySring +=
+                " && !("+
+                " SELECT FROM org.dependencytrack.model.RepositoryMetaComponent m " +
+                " WHERE m.name == this.name " +
+                " && m.namespace == this.group " +
+                " && m.latestVersion != this.version " +
+                " && this.purl.matches('pkg:' + m.repositoryType.toString().toLowerCase() + '/%') " +
+                " ).isEmpty()";
+        }
+        if (onlyDirect) {
+            querySring +=
+                " && this.project.directDependencies.matches('%\"uuid\":\"'+this.uuid+'\"%') "; // only direct dependencies
+        }
+        final Query<Component> query = pm.newQuery(querySring);
         query.getFetchPlan().setMaxFetchDepth(2);
         if (orderBy == null) {
             query.setOrdering("name asc, version desc");
         }
         if (filter != null) {
-            query.setFilter("project == :project && name.toLowerCase().matches(:name)");
             final String filterString = ".*" + filter.toLowerCase() + ".*";
             result = execute(query, project, filterString);
         } else {
@@ -186,8 +221,9 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
             default -> "(blake3 == :hash)";
         };
 
-        final Query<Component> query = pm.newQuery(Component.class);;
-        final Map<String, Object> params = Map.of("hash", hash);
+        final Query<Component> query = pm.newQuery(Component.class);
+        final var params = new HashMap<String, Object>();
+        params.put("hash", hash);
         preprocessACLs(query, queryFilter, params, false);
         return execute(query, params);
     }
@@ -304,7 +340,7 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
      */
     public Component createComponent(Component component, boolean commitIndex) {
         final Component result = persist(component);
-        Event.dispatch(new IndexEvent(IndexEvent.Action.CREATE, pm.detachCopy(result)));
+        Event.dispatch(new IndexEvent(IndexEvent.Action.CREATE, result));
         commitSearchIndex(commitIndex, Component.class);
         return result;
     }
@@ -336,8 +372,11 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
         component.setDescription(sourceComponent.getDescription());
         component.setCopyright(sourceComponent.getCopyright());
         component.setLicense(sourceComponent.getLicense());
+        component.setLicenseExpression(sourceComponent.getLicenseExpression());
+        component.setLicenseUrl(sourceComponent.getLicenseUrl());
         component.setResolvedLicense(sourceComponent.getResolvedLicense());
         component.setAuthor(sourceComponent.getAuthor());
+        component.setSupplier(sourceComponent.getSupplier());
         // TODO Add support for parent component and children components
         component.setProject(destinationProject);
         return createComponent(component, commitIndex);
@@ -364,14 +403,17 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
         component.setDescription(transientComponent.getDescription());
         component.setCopyright(transientComponent.getCopyright());
         component.setLicense(transientComponent.getLicense());
+        component.setLicenseExpression(transientComponent.getLicenseExpression());
+        component.setLicenseUrl(transientComponent.getLicenseUrl());
         component.setResolvedLicense(transientComponent.getResolvedLicense());
         component.setParent(transientComponent.getParent());
         component.setCpe(transientComponent.getCpe());
         component.setPurl(transientComponent.getPurl());
         component.setInternal(transientComponent.isInternal());
         component.setAuthor(transientComponent.getAuthor());
+        component.setSupplier(transientComponent.getSupplier());
         final Component result = persist(component);
-        Event.dispatch(new IndexEvent(IndexEvent.Action.UPDATE, pm.detachCopy(result)));
+        Event.dispatch(new IndexEvent(IndexEvent.Action.UPDATE, result));
         commitSearchIndex(commitIndex, Component.class);
         return result;
     }
@@ -399,7 +441,7 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
         pm.getFetchPlan().setDetachmentOptions(FetchPlan.DETACH_LOAD_FIELDS);
         try {
             final Component result = pm.getObjectById(Component.class, component.getId());
-            Event.dispatch(new IndexEvent(IndexEvent.Action.DELETE, pm.detachCopy(result)));
+            Event.dispatch(new IndexEvent(IndexEvent.Action.DELETE, result));
             deleteAnalysisTrail(component);
             deleteViolationAnalysisTrail(component);
             deleteMetrics(component);
@@ -420,19 +462,10 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
      * @return a Component object, or null if not found
      */
     public Component matchSingleIdentity(final Project project, final ComponentIdentity cid) {
-        String purlString = null;
-        String purlCoordinates = null;
-        if (cid.getPurl() != null) {
-            try {
-                final PackageURL purl = cid.getPurl();
-                purlString = cid.getPurl().canonicalize();
-                purlCoordinates = new PackageURL(purl.getType(), purl.getNamespace(), purl.getName(), purl.getVersion(), null, null).canonicalize();
-            } catch (MalformedPackageURLException e) { // throw it away
-            }
-        }
-        final Query<Component> query = pm.newQuery(Component.class, "project == :project && ((purl != null && purl == :purl) || (purlCoordinates != null && purlCoordinates == :purlCoordinates) || (swidTagId != null && swidTagId == :swidTagId) || (cpe != null && cpe == :cpe) || (group == :group && name == :name && version == :version))");
+        final Pair<String, Map<String, Object>> queryFilterParamsPair = buildComponentIdentityQuery(project, cid);
+        final Query<Component> query = pm.newQuery(Component.class, queryFilterParamsPair.getLeft());
         query.setRange(0, 1);
-        return singleResult(query.executeWithArray(project, purlString, purlCoordinates, cid.getSwidTagId(), cid.getCpe(), cid.getGroup(), cid.getName(), cid.getVersion()));
+        return singleResult(query.executeWithMap(queryFilterParamsPair.getRight()));
     }
 
     /**
@@ -443,6 +476,24 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
      */
     @SuppressWarnings("unchecked")
     public List<Component> matchIdentity(final Project project, final ComponentIdentity cid) {
+        final Pair<String, Map<String, Object>> queryFilterParamsPair = buildComponentIdentityQuery(project, cid);
+        final Query<Component> query = pm.newQuery(Component.class, queryFilterParamsPair.getLeft());
+        return (List<Component>) query.executeWithMap(queryFilterParamsPair.getRight());
+    }
+
+    /**
+     * Returns a List of components by matching identity information.
+     * @param cid the identity values of the component
+     * @return a List of Component objects
+     */
+    @SuppressWarnings("unchecked")
+    public List<Component> matchIdentity(final ComponentIdentity cid) {
+        final Pair<String, Map<String, Object>> queryFilterParamsPair = buildComponentIdentityQuery(null, cid);
+        final Query<Component> query = pm.newQuery(Component.class, queryFilterParamsPair.getLeft());
+        return (List<Component>) query.executeWithMap(queryFilterParamsPair.getRight());
+    }
+
+    private static Pair<String, Map<String, Object>> buildComponentIdentityQuery(final Project project, final ComponentIdentity cid) {
         String purlString = null;
         String purlCoordinates = null;
         if (cid.getPurl() != null) {
@@ -453,29 +504,56 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
             } catch (MalformedPackageURLException e) { // throw it away
             }
         }
-        final Query<Component> query = pm.newQuery(Component.class, "project == :project && ((purl != null && purl == :purl) || (purlCoordinates != null && purlCoordinates == :purlCoordinates) || (swidTagId != null && swidTagId == :swidTagId) || (cpe != null && cpe == :cpe) || (group == :group && name == :name && version == :version))");
-        return (List<Component>) query.executeWithArray(project, purlString, purlCoordinates, cid.getSwidTagId(), cid.getCpe(), cid.getGroup(), cid.getName(), cid.getVersion());
-    }
 
-    /**
-     * Returns a List of components by matching identity information.
-     * @param cid the identity values of the component
-     * @return a List of Component objects
-     */
-    @SuppressWarnings("unchecked")
-    public List<Component> matchIdentity(final ComponentIdentity cid) {
-        String purlString = null;
-        String purlCoordinates = null;
-        if (cid.getPurl() != null) {
-            purlString = cid.getPurl().canonicalize();
-            try {
-                final PackageURL purl = cid.getPurl();
-                purlCoordinates = new PackageURL(purl.getType(), purl.getNamespace(), purl.getName(), purl.getVersion(), null, null).canonicalize();
-            } catch (MalformedPackageURLException e) { // throw it away
-            }
+        final var filterParts = new ArrayList<String>();
+        final var params = new HashMap<String, Object>();
+
+        if (purlString != null) {
+            filterParts.add("purl == :purl");
+            params.put("purl", purlString);
         }
-        final Query<Component> query = pm.newQuery(Component.class, "(purl != null && purl == :purl) || (purlCoordinates != null && purlCoordinates == :purlCoordinates) || (swidTagId != null && swidTagId == :swidTagId) || (cpe != null && cpe == :cpe) || (group == :group && name == :name && version == :version)");
-        return (List<Component>) query.executeWithArray(purlString, purlCoordinates, cid.getSwidTagId(), cid.getCpe(), cid.getGroup(), cid.getName(), cid.getVersion());
+        if (purlCoordinates != null) {
+            filterParts.add("purlCoordinates == :purlCoordinates");
+            params.put("purlCoordinates", purlCoordinates);
+        }
+        if (cid.getCpe() != null) {
+            filterParts.add("cpe == :cpe");
+            params.put("cpe", cid.getCpe());
+        }
+        if (cid.getSwidTagId() != null) {
+            filterParts.add("swidTagId == :swidTagId");
+            params.put("swidTagId", cid.getSwidTagId());
+        }
+
+        final var coordinatesFilterParts = new ArrayList<String>();
+        if (cid.getGroup() != null) {
+            coordinatesFilterParts.add("group == :group");
+            params.put("group", cid.getGroup());
+        } else {
+            coordinatesFilterParts.add("group == null");
+        }
+        if (cid.getName() != null) {
+            coordinatesFilterParts.add("name == :name");
+            params.put("name", cid.getName());
+        } else {
+            coordinatesFilterParts.add("name == null");
+        }
+        if (cid.getVersion() != null) {
+            coordinatesFilterParts.add("version == :version");
+            params.put("version", cid.getVersion());
+        } else {
+            coordinatesFilterParts.add("version == null");
+        }
+        filterParts.add("(%s)".formatted(String.join(" && ", coordinatesFilterParts)));
+
+        if (project == null) {
+            final String filter = String.join(" || ", filterParts);
+            return Pair.of(filter, params);
+        }
+
+        final String filter = "project == :project && (%s)".formatted(String.join(" || ", filterParts));
+        params.put("project", project);
+        return Pair.of(filter, params);
     }
 
     /**
@@ -601,6 +679,18 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
             dependencyGraph.put(entry.getKey(), transientComponent);
         }
         return dependencyGraph;
+    }
+
+    /**
+     * Returns a list of all {@link DependencyGraphResponse} objects by {@link Component} UUID.
+     * @param uuids a list of {@link Component} UUIDs
+     * @return a list of {@link DependencyGraphResponse} objects
+     * @since 4.9.0
+     */
+    public List<DependencyGraphResponse> getDependencyGraphByUUID(final List<UUID> uuids) {
+        final Query<Component> query = this.getObjectsByUuidsQuery(Component.class, uuids);
+        query.setResult("uuid, name, version, purl, directDependencies, null");
+        return List.copyOf(query.executeResultList(DependencyGraphResponse.class));
     }
 
     private void getParentDependenciesOfComponent(Project project, Component parentNode, Map<String, Component> dependencyGraph, Component searchedComponent) {

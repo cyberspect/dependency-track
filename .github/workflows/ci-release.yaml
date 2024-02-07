@@ -9,6 +9,8 @@ on:
         description: 'Use this to overwrite the version number to release, otherwise uses the current SNAPSHOT version (expected format x.y.z)'
         type: string
 
+permissions: { }
+
 jobs:
   prepare-release:
     runs-on: ubuntu-latest
@@ -18,7 +20,7 @@ jobs:
       release-branch: ${{ steps.variables.outputs.release-branch }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
 
       - name: Setup Environment
         id: variables
@@ -30,12 +32,16 @@ jobs:
           fi
           NEXT_VERSION="${VERSION%.*}.$((${VERSION##*.} + 1))-SNAPSHOT"
 
-          echo "::set-output name=version::${VERSION}"
-          echo "::set-output name=next-version::${NEXT_VERSION}"
-          echo "::set-output name=release-branch::${VERSION%.*}.x"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "next-version=${NEXT_VERSION}" >> $GITHUB_OUTPUT
+          echo "release-branch=${VERSION%.*}.x" >> $GITHUB_OUTPUT
 
   create-release:
     runs-on: ubuntu-latest
+    permissions:
+      # Required for pushing changes via git command (rather than via GitHub API).
+      # TODO: Use bot credentials for git, or rewrite the "Commit Version" step to use API instead.
+      contents: write
     needs:
       - prepare-release
 
@@ -45,10 +51,10 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
 
       - name: Set up JDK
-        uses: actions/setup-java@v3.11.0
+        uses: actions/setup-java@387ac29b308b003ca37ba93a6cab5eb57c8f5f93 # tag=v4.0.0
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -112,7 +118,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
         with:
           ref: ${{ needs.prepare-release.outputs.release-branch }}
 
