@@ -53,11 +53,6 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                                 "description" : "projectDescription",
                                 "purl" : "pkg:maven/org.acme/projectName@projectVersion",
                                 "tags" : "tag1,tag2"
-                              },
-                              "bom" : {
-                                "content" : "bomContent",
-                                "format" : "CycloneDX",
-                                "specVersion" : "1.5"
                               }
                             }
                           }
