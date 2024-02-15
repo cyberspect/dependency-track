@@ -48,6 +48,8 @@ import org.dependencytrack.model.Severity;
 import org.dependencytrack.model.Vulnerability;
 import org.dependencytrack.parser.common.resolver.CweResolver;
 import org.dependencytrack.parser.cyclonedx.CycloneDXExporter;
+import org.dependencytrack.parser.spdx.expression.SpdxExpressionParser;
+import org.dependencytrack.parser.spdx.expression.model.SpdxExpression;
 import org.dependencytrack.persistence.QueryManager;
 import org.dependencytrack.util.InternalComponentIdentificationUtil;
 import org.dependencytrack.util.PurlUtil;
@@ -66,6 +68,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 
 public class ModelConverter {
 
@@ -94,7 +98,7 @@ public class ModelConverter {
         return components;
     }
 
-    @SuppressWarnings("deprecation")
+    /**Convert from CycloneDX to DT */
     public static Component convert(final QueryManager qm, final org.cyclonedx.model.Component cycloneDxComponent, final Project project) {
         Component component = qm.matchSingleIdentity(project, new ComponentIdentity(cycloneDxComponent));
         if (component == null) {
@@ -104,6 +108,7 @@ public class ModelConverter {
         component.setAuthor(StringUtils.trimToNull(cycloneDxComponent.getAuthor()));
         component.setBomRef(StringUtils.trimToNull(cycloneDxComponent.getBomRef()));
         component.setPublisher(StringUtils.trimToNull(cycloneDxComponent.getPublisher()));
+        component.setSupplier(convert(cycloneDxComponent.getSupplier()));
         component.setGroup(StringUtils.trimToNull(cycloneDxComponent.getGroup()));
         component.setName(StringUtils.trimToNull(cycloneDxComponent.getName()));
         component.setVersion(StringUtils.trimToNull(cycloneDxComponent.getVersion()));
@@ -154,22 +159,63 @@ public class ModelConverter {
         }
 
         final LicenseChoice licenseChoice = cycloneDxComponent.getLicenseChoice();
-        if (licenseChoice != null && licenseChoice.getLicenses() != null && !licenseChoice.getLicenses().isEmpty()) {
-            for (final org.cyclonedx.model.License cycloneLicense : licenseChoice.getLicenses()) {
-                if (cycloneLicense != null) {
-                    if (StringUtils.isNotBlank(cycloneLicense.getId())) {
-                        final License license = qm.getLicense(StringUtils.trimToNull(cycloneLicense.getId()));
-                        if (license != null) {
-                            component.setResolvedLicense(license);
-                        }
+        if (licenseChoice != null) {
+            final List<org.cyclonedx.model.License> licenseOptions = new ArrayList<>();
+            if (licenseChoice.getExpression() != null) {
+                final var expressionParser = new SpdxExpressionParser();
+                final SpdxExpression parsedExpression = expressionParser.parse(licenseChoice.getExpression());
+                if (!Objects.equals(parsedExpression, SpdxExpression.INVALID)) {
+                    // store license expression, but don't overwrite manual changes to the field
+                    if (component.getLicenseExpression() == null) {
+                        component.setLicenseExpression(licenseChoice.getExpression());
                     }
-                    component.setLicense(StringUtils.trimToNull(cycloneLicense.getName()));
-                    component.setLicenseUrl(StringUtils.trimToNull(cycloneLicense.getUrl()));
+                    // if the expression just consists of one license id, we can add it as another license option
+                    if (parsedExpression.getSpdxLicenseId() != null) {
+                        org.cyclonedx.model.License expressionLicense = new org.cyclonedx.model.License();
+                        expressionLicense.setId(parsedExpression.getSpdxLicenseId());
+                        licenseOptions.add(expressionLicense);
+                    }
+                } else {
+                    LOGGER.warn("""
+                            Encountered invalid license expression "%s" for \
+                            Component{group=%s, name=%s, version=%s, bomRef=%s}; Skipping\
+                            """.formatted(licenseChoice.getExpression(), component.getGroup(),
+                            component.getName(), component.getVersion(), component.getBomRef()));
+                }
+            }
+            // add license options from the component's license array. These will have higher priority
+            // than the one from the parsed expression, because the following loop iterates through all
+            // the options and does not stop once it found a match.
+            if (licenseChoice.getLicenses() != null && !licenseChoice.getLicenses().isEmpty()) {
+                licenseOptions.addAll(licenseChoice.getLicenses());
+            }
+
+            // try to find a license in the database among the license options, but only if none has been
+            // selected previously.
+            if (component.getResolvedLicense() == null) {
+                for (final org.cyclonedx.model.License cycloneLicense : licenseOptions) {
+                    if (cycloneLicense != null) {
+                        if (StringUtils.isNotBlank(cycloneLicense.getId())) {
+                            final License license = qm.getLicense(StringUtils.trimToNull(cycloneLicense.getId()));
+                            if (license != null) {
+                                component.setResolvedLicense(license);
+                            }
+                        }
+                        else if (StringUtils.isNotBlank(cycloneLicense.getName()))
+                        {
+                            final License license = qm.getCustomLicense(StringUtils.trimToNull(cycloneLicense.getName()));
+                            if (license != null) {
+                                component.setResolvedLicense(license);
+                            }
+                        }
+                        component.setLicense(StringUtils.trimToNull(cycloneLicense.getName()));
+                        component.setLicenseUrl(StringUtils.trimToNull(cycloneLicense.getUrl()));
+                    }
                 }
             }
         }
 
-        if (cycloneDxComponent.getExternalReferences() != null && cycloneDxComponent.getExternalReferences().size() > 0) {
+        if (cycloneDxComponent.getExternalReferences() != null && !cycloneDxComponent.getExternalReferences().isEmpty()) {
             List<ExternalReference> references = new ArrayList<>();
             for (org.cyclonedx.model.ExternalReference cycloneDxRef: cycloneDxComponent.getExternalReferences()) {
                 ExternalReference ref = new ExternalReference();
@@ -198,7 +244,81 @@ public class ModelConverter {
         return component;
     }
 
-    @SuppressWarnings("deprecation")
+    public static OrganizationalEntity convert(final org.cyclonedx.model.OrganizationalEntity cdxEntity) {
+        if (cdxEntity == null) {
+            return null;
+        }
+
+        final var dtEntity = new OrganizationalEntity();
+        dtEntity.setName(StringUtils.trimToNull(cdxEntity.getName()));
+        if (cdxEntity.getContacts() != null && !cdxEntity.getContacts().isEmpty()) {
+            dtEntity.setContacts(cdxEntity.getContacts().stream().map(ModelConverter::convert).toList());
+        }
+        if (cdxEntity.getUrls() != null && !cdxEntity.getUrls().isEmpty()) {
+            dtEntity.setUrls(cdxEntity.getUrls().toArray(new String[0]));
+        }
+
+        return dtEntity;
+    }
+
+    public static List<OrganizationalContact> convertCdxContacts(final List<org.cyclonedx.model.OrganizationalContact> cdxContacts) {
+        if (cdxContacts == null) {
+            return null;
+        }
+
+        return cdxContacts.stream().map(ModelConverter::convert).toList();
+    }
+
+    private static OrganizationalContact convert(final org.cyclonedx.model.OrganizationalContact cdxContact) {
+        if (cdxContact == null) {
+            return null;
+        }
+
+        final var dtContact = new OrganizationalContact();
+        dtContact.setName(StringUtils.trimToNull(cdxContact.getName()));
+        dtContact.setEmail(StringUtils.trimToNull(cdxContact.getEmail()));
+        dtContact.setPhone(StringUtils.trimToNull(cdxContact.getPhone()));
+        return dtContact;
+    }
+
+    private static List<org.cyclonedx.model.OrganizationalContact> convertContacts(final List<OrganizationalContact> dtContacts) {
+        if (dtContacts == null) {
+            return null;
+        }
+
+        return dtContacts.stream().map(ModelConverter::convert).toList();
+    }
+
+    private static org.cyclonedx.model.OrganizationalEntity convert(final OrganizationalEntity dtEntity) {
+        if (dtEntity == null) {
+            return null;
+        }
+
+        final var cdxEntity = new org.cyclonedx.model.OrganizationalEntity();
+        cdxEntity.setName(StringUtils.trimToNull(dtEntity.getName()));
+        if (dtEntity.getContacts() != null && !dtEntity.getContacts().isEmpty()) {
+            cdxEntity.setContacts(dtEntity.getContacts().stream().map(ModelConverter::convert).toList());
+        }
+        if (dtEntity.getUrls() != null && dtEntity.getUrls().length > 0) {
+            cdxEntity.setUrls(Arrays.stream(dtEntity.getUrls()).toList());
+        }
+
+        return cdxEntity;
+    }
+
+    private static org.cyclonedx.model.OrganizationalContact convert(final OrganizationalContact dtContact) {
+        if (dtContact == null) {
+            return null;
+        }
+
+        final var cdxContact = new org.cyclonedx.model.OrganizationalContact();
+        cdxContact.setName(StringUtils.trimToNull(dtContact.getName()));
+        cdxContact.setEmail(StringUtils.trimToNull(dtContact.getEmail()));
+        cdxContact.setPhone(StringUtils.trimToNull(cdxContact.getPhone()));
+        return cdxContact;
+    }
+    
+    /**Convert from DT to CycloneDX */
     public static org.cyclonedx.model.Component convert(final QueryManager qm, final Component component) {
         final org.cyclonedx.model.Component cycloneComponent = new org.cyclonedx.model.Component();
         cycloneComponent.setBomRef(component.getUuid().toString());
@@ -209,6 +329,7 @@ public class ModelConverter {
         cycloneComponent.setCopyright(StringUtils.trimToNull(component.getCopyright()));
         cycloneComponent.setCpe(StringUtils.trimToNull(component.getCpe()));
         cycloneComponent.setAuthor(StringUtils.trimToNull(component.getAuthor()));
+        cycloneComponent.setSupplier(convert(component.getSupplier()));
 
         if (component.getSwidTagId() != null) {
             final Swid swid = new Swid();
@@ -245,25 +366,27 @@ public class ModelConverter {
             cycloneComponent.addHash(new Hash(Hash.Algorithm.SHA3_512, component.getSha3_512()));
         }
 
+        final LicenseChoice licenseChoice = new LicenseChoice();
         if (component.getResolvedLicense() != null) {
             final org.cyclonedx.model.License license = new org.cyclonedx.model.License();
             license.setId(component.getResolvedLicense().getLicenseId());
             license.setUrl(component.getLicenseUrl());
-            final LicenseChoice licenseChoice = new LicenseChoice();
             licenseChoice.addLicense(license);
             cycloneComponent.setLicenseChoice(licenseChoice);
         } else if (component.getLicense() != null) {
             final org.cyclonedx.model.License license = new org.cyclonedx.model.License();
             license.setName(component.getLicense());
             license.setUrl(component.getLicenseUrl());
-            final LicenseChoice licenseChoice = new LicenseChoice();
             licenseChoice.addLicense(license);
             cycloneComponent.setLicenseChoice(licenseChoice);
         } else if (StringUtils.isNotEmpty(component.getLicenseUrl())) {
             final org.cyclonedx.model.License license = new org.cyclonedx.model.License();
             license.setUrl(component.getLicenseUrl());
-            final LicenseChoice licenseChoice = new LicenseChoice();
             licenseChoice.addLicense(license);
+            cycloneComponent.setLicenseChoice(licenseChoice);
+        }
+        if (component.getLicenseExpression() != null) {
+            licenseChoice.setExpression(component.getLicenseExpression());
             cycloneComponent.setLicenseChoice(licenseChoice);
         }
 
@@ -309,6 +432,8 @@ public class ModelConverter {
         tool.setVersion(alpine.Config.getInstance().getApplicationVersion());
         metadata.setTools(Collections.singletonList(tool));
         if (project != null) {
+            metadata.setManufacture(convert(project.getManufacturer()));
+
             final org.cyclonedx.model.Component cycloneComponent = new org.cyclonedx.model.Component();
             cycloneComponent.setBomRef(project.getUuid().toString());
             cycloneComponent.setAuthor(StringUtils.trimToNull(project.getAuthor()));
@@ -337,9 +462,9 @@ public class ModelConverter {
             } else {
                 cycloneComponent.setType(org.cyclonedx.model.Component.Type.LIBRARY);
             }
-            if (project.getExternalReferences() != null && project.getExternalReferences().size() > 0) {
+            if (project.getExternalReferences() != null && !project.getExternalReferences().isEmpty()) {
                 List<org.cyclonedx.model.ExternalReference> references = new ArrayList<>();
-                project.getExternalReferences().stream().forEach(externalReference -> {
+                project.getExternalReferences().forEach(externalReference -> {
                     org.cyclonedx.model.ExternalReference ref = new org.cyclonedx.model.ExternalReference();
                     ref.setUrl(externalReference.getUrl());
                     ref.setType(externalReference.getType());
@@ -348,7 +473,13 @@ public class ModelConverter {
                 });
                 cycloneComponent.setExternalReferences(references);
             }
+            cycloneComponent.setSupplier(convert(project.getSupplier()));
             metadata.setComponent(cycloneComponent);
+
+            if (project.getMetadata() != null) {
+                metadata.setAuthors(convertContacts(project.getMetadata().getAuthors()));
+                metadata.setSupplier(convert(project.getMetadata().getSupplier()));
+            }
         }
         return metadata;
     }
@@ -378,41 +509,19 @@ public class ModelConverter {
             service.setProject(project);
         }
         service.setBomRef(StringUtils.trimToNull(cycloneDxService.getBomRef()));
-        if (cycloneDxService.getProvider() != null) {
-            OrganizationalEntity provider = new OrganizationalEntity();;
-            provider.setName(cycloneDxService.getProvider().getName());
-            if (cycloneDxService.getProvider().getUrls() != null && cycloneDxService.getProvider().getUrls().size() > 0) {
-                provider.setUrls(cycloneDxService.getProvider().getUrls().toArray(new String[0]));
-            } else {
-                provider.setUrls(null);
-            }
-            if (cycloneDxService.getProvider().getContacts() != null) {
-                List<OrganizationalContact> contacts = new ArrayList<>();
-                for (org.cyclonedx.model.OrganizationalContact cycloneDxContact: cycloneDxService.getProvider().getContacts()) {
-                    OrganizationalContact contact = new OrganizationalContact();
-                    contact.setName(cycloneDxContact.getName());
-                    contact.setEmail(cycloneDxContact.getEmail());
-                    contact.setPhone(cycloneDxContact.getPhone());
-                    contacts.add(contact);
-                }
-                provider.setContacts(contacts);
-            }
-            service.setProvider(provider);
-        } else {
-            service.setProvider(null);
-        }
+        service.setProvider(convert(cycloneDxService.getProvider()));
         service.setGroup(StringUtils.trimToNull(cycloneDxService.getGroup()));
         service.setName(StringUtils.trimToNull(cycloneDxService.getName()));
         service.setVersion(StringUtils.trimToNull(cycloneDxService.getVersion()));
         service.setDescription(StringUtils.trimToNull(cycloneDxService.getDescription()));
-        if (cycloneDxService.getEndpoints() != null && cycloneDxService.getEndpoints().size() > 0) {
+        if (cycloneDxService.getEndpoints() != null && !cycloneDxService.getEndpoints().isEmpty()) {
             service.setEndpoints(cycloneDxService.getEndpoints().toArray(new String[0]));
         } else {
             service.setEndpoints(null);
         }
         service.setAuthenticated(cycloneDxService.getAuthenticated());
         service.setCrossesTrustBoundary(cycloneDxService.getxTrustBoundary());
-        if (cycloneDxService.getData() != null && cycloneDxService.getData().size() > 0) {
+        if (cycloneDxService.getData() != null && !cycloneDxService.getData().isEmpty()) {
             List<DataClassification> dataClassifications = new ArrayList<>();
             for (org.cyclonedx.model.ServiceData data: cycloneDxService.getData()) {
                 DataClassification dc = new DataClassification();
@@ -424,7 +533,7 @@ public class ModelConverter {
         } else {
             service.setData(null);
         }
-        if (cycloneDxService.getExternalReferences() != null && cycloneDxService.getExternalReferences().size() > 0) {
+        if (cycloneDxService.getExternalReferences() != null && !cycloneDxService.getExternalReferences().isEmpty()) {
             List<ExternalReference> references = new ArrayList<>();
             for (org.cyclonedx.model.ExternalReference cycloneDxRef: cycloneDxService.getExternalReferences()) {
                 ExternalReference ref = new ExternalReference();
@@ -471,25 +580,7 @@ public class ModelConverter {
     public static org.cyclonedx.model.Service convert(final QueryManager qm, final ServiceComponent service) {
         final org.cyclonedx.model.Service cycloneService = new org.cyclonedx.model.Service();
         cycloneService.setBomRef(service.getUuid().toString());
-        if (service.getProvider() != null) {
-            org.cyclonedx.model.OrganizationalEntity cycloneEntity = new org.cyclonedx.model.OrganizationalEntity();
-            cycloneEntity.setName(service.getProvider().getName());
-            if (service.getProvider().getUrls() != null) {
-                cycloneEntity.setUrls(Arrays.asList(service.getProvider().getUrls()));
-            }
-            if (service.getProvider().getContacts() != null && service.getProvider().getContacts().size() > 0) {
-                List<org.cyclonedx.model.OrganizationalContact> contacts = new ArrayList<>();
-                for (OrganizationalContact contact: service.getProvider().getContacts()) {
-                    org.cyclonedx.model.OrganizationalContact cycloneContact = new org.cyclonedx.model.OrganizationalContact();
-                    cycloneContact.setName(contact.getName());
-                    cycloneContact.setEmail(contact.getEmail());
-                    cycloneContact.setPhone(contact.getPhone());
-                    contacts.add(cycloneContact);
-                }
-                cycloneEntity.setContacts(contacts);
-            }
-            cycloneService.setProvider(cycloneEntity);
-        }
+        cycloneService.setProvider(convert(service.getProvider()));
         cycloneService.setGroup(StringUtils.trimToNull(service.getGroup()));
         cycloneService.setName(StringUtils.trimToNull(service.getName()));
         cycloneService.setVersion(StringUtils.trimToNull(service.getVersion()));
@@ -499,13 +590,13 @@ public class ModelConverter {
         }
         cycloneService.setAuthenticated(service.getAuthenticated());
         cycloneService.setxTrustBoundary(service.getCrossesTrustBoundary());
-        if (service.getData() != null && service.getData().size() > 0) {
+        if (service.getData() != null && !service.getData().isEmpty()) {
             for (DataClassification dc: service.getData()) {
                 org.cyclonedx.model.ServiceData sd = new org.cyclonedx.model.ServiceData(dc.getDirection().name(), dc.getName());
                 cycloneService.addServiceData(sd);
             }
         }
-        if (service.getExternalReferences() != null && service.getExternalReferences().size() > 0) {
+        if (service.getExternalReferences() != null && !service.getExternalReferences().isEmpty()) {
             for (ExternalReference ref : service.getExternalReferences()) {
                 org.cyclonedx.model.ExternalReference cycloneRef = new org.cyclonedx.model.ExternalReference();
                 cycloneRef.setType(ref.getType());
@@ -741,19 +832,19 @@ public class ModelConverter {
 
         final var dependencies = new ArrayList<Dependency>();
         final var rootDependency = new Dependency(project.getUuid().toString());
-        rootDependency.setDependencies(convertDirectDependencies(project.getDirectDependencies()));
+        rootDependency.setDependencies(convertDirectDependencies(project.getDirectDependencies(), components));
         dependencies.add(rootDependency);
 
         for (final Component component : components) {
             final var dependency = new Dependency(component.getUuid().toString());
-            dependency.setDependencies(convertDirectDependencies(component.getDirectDependencies()));
+            dependency.setDependencies(convertDirectDependencies(component.getDirectDependencies(), components));
             dependencies.add(dependency);
         }
 
         return dependencies;
     }
 
-    private static List<Dependency> convertDirectDependencies(final String directDependenciesRaw) {
+    private static List<Dependency> convertDirectDependencies(final String directDependenciesRaw, final List<Component> components) {
         if (directDependenciesRaw == null || directDependenciesRaw.isBlank()) {
             return Collections.emptyList();
         }
@@ -765,7 +856,10 @@ public class ModelConverter {
         if (directDependenciesJson instanceof final JsonArray directDependenciesJsonArray) {
             for (final JsonValue directDependency : directDependenciesJsonArray) {
                 if (directDependency instanceof final JsonObject directDependencyObject) {
-                    dependencies.add(new Dependency(directDependencyObject.getString("uuid")));
+                    final String componentUuid = directDependencyObject.getString("uuid", null);
+                    if (componentUuid != null && components.stream().map(Component::getUuid).map(UUID::toString).anyMatch(componentUuid::equals)) {
+                        dependencies.add(new Dependency(directDependencyObject.getString("uuid")));
+                    }
                 }
             }
         }

@@ -27,6 +27,7 @@ import org.cyclonedx.BomParserFactory;
 import org.cyclonedx.parsers.Parser;
 import org.dependencytrack.event.BomUploadEvent;
 import org.dependencytrack.event.NewVulnerableDependencyAnalysisEvent;
+import org.dependencytrack.event.PolicyEvaluationEvent;
 import org.dependencytrack.event.RepositoryMetaEvent;
 import org.dependencytrack.event.VulnerabilityAnalysisEvent;
 import org.dependencytrack.model.Bom;
@@ -34,6 +35,7 @@ import org.dependencytrack.model.Classifier;
 import org.dependencytrack.model.Component;
 import org.dependencytrack.model.ConfigPropertyConstants;
 import org.dependencytrack.model.Project;
+import org.dependencytrack.model.ProjectMetadata;
 import org.dependencytrack.model.ServiceComponent;
 import org.dependencytrack.notification.NotificationConstants;
 import org.dependencytrack.notification.NotificationGroup;
@@ -45,11 +47,13 @@ import org.dependencytrack.persistence.QueryManager;
 import org.dependencytrack.util.CompressUtil;
 import org.dependencytrack.util.InternalComponentIdentificationUtil;
 
+import javax.jdo.FetchPlan;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
-import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Subscriber task that performs processing of bill-of-material (bom)
@@ -65,6 +69,7 @@ public class BomUploadProcessingTask implements Subscriber {
     /**
      * {@inheritDoc}
      */
+    @Override
     public void inform(final Event e) {
         if (e instanceof BomUploadEvent) {
             Project bomProcessingFailedProject = null;
@@ -74,14 +79,15 @@ public class BomUploadProcessingTask implements Subscriber {
             final byte[] bomBytes = CompressUtil.optionallyDecompress(event.getBom());
             final QueryManager qm = new QueryManager();
             try {
-                final Project project =  qm.getObjectByUuid(Project.class, event.getProjectUuid());
+                final Project project =  qm.getObjectByUuid(Project.class, event.getProjectUuid(),
+                        List.of(FetchPlan.DEFAULT, Project.FetchGroup.METADATA.name()));
                 bomProcessingFailedProject = project;
-                
+
                 if (project == null) {
                     LOGGER.warn("Ignoring BOM Upload event for no longer existing project " + event.getProjectUuid());
                     return;
                 }
-                
+
                 final List<Component> components;
                 final List<Component> newComponents = new ArrayList<>();
                 final List<Component> flattenedComponents = new ArrayList<>();
@@ -106,14 +112,45 @@ public class BomUploadProcessingTask implements Subscriber {
                         bomSpecVersion = cycloneDxBom.getSpecVersion();
                         bomProcessingFailedBomVersion = bomSpecVersion;
                         bomVersion = cycloneDxBom.getVersion();
+                        if (cycloneDxBom.getMetadata() != null) {
+                            project.setManufacturer(ModelConverter.convert(cycloneDxBom.getMetadata().getManufacture()));
+
+                            final var projectMetadata = new ProjectMetadata();
+                            projectMetadata.setSupplier(ModelConverter.convert(cycloneDxBom.getMetadata().getSupplier()));
+                            projectMetadata.setAuthors(cycloneDxBom.getMetadata().getAuthors() != null
+                                    ? new ArrayList<>(ModelConverter.convertCdxContacts(cycloneDxBom.getMetadata().getAuthors()))
+                                    : null);
+                            if (project.getMetadata() != null) {
+                                qm.runInTransaction(() -> {
+                                    project.getMetadata().setSupplier(projectMetadata.getSupplier());
+                                    project.getMetadata().setAuthors(projectMetadata.getAuthors());
+                                });
+                            } else {
+                                qm.runInTransaction(() -> {
+                                    projectMetadata.setProject(project);
+                                    qm.getPersistenceManager().makePersistent(projectMetadata);
+                                });
+                            }
+
+                            if (cycloneDxBom.getMetadata().getComponent() != null) {
+                                final org.cyclonedx.model.Component cdxMetadataComponent = cycloneDxBom.getMetadata().getComponent();
+                                if (cdxMetadataComponent.getType() != null && project.getClassifier() == null) {
+                                    try {
+                                        project.setClassifier(Classifier.valueOf(cdxMetadataComponent.getType().name()));
+                                    } catch (IllegalArgumentException ex) {
+                                        LOGGER.warn("""
+                                                The metadata.component element of the BOM is of unknown type %s. \
+                                                Known types are %s.""".formatted(cdxMetadataComponent.getType(),
+                                                Arrays.stream(Classifier.values()).map(Enum::name).collect(Collectors.joining(", "))));
+                                    }
+                                }
+                                if (cdxMetadataComponent.getSupplier() != null) {
+                                    project.setSupplier(ModelConverter.convert(cdxMetadataComponent.getSupplier()));
+                                }
+                            }
+                        }
                         if (project.getClassifier() == null) {
-                            final var classifier = Optional.ofNullable(cycloneDxBom.getMetadata())
-                                .map(org.cyclonedx.model.Metadata::getComponent)
-                                .map(org.cyclonedx.model.Component::getType)
-                                .map(org.cyclonedx.model.Component.Type::name)
-                                .map(Classifier::valueOf)
-                                .orElse(Classifier.APPLICATION);
-                            project.setClassifier(classifier);
+                            project.setClassifier(Classifier.APPLICATION);
                         }
                         project.setExternalReferences(ModelConverter.convertBomMetadataExternalReferences(cycloneDxBom));
                         serialNumnber = (cycloneDxBom.getSerialNumber() != null) ? cycloneDxBom.getSerialNumber().replaceFirst("urn:uuid:", "") : null;
@@ -168,8 +205,17 @@ public class BomUploadProcessingTask implements Subscriber {
                     // vulnerability analysis completed.
                     vae.onSuccess(new NewVulnerableDependencyAnalysisEvent(newComponents));
                 }
+                // Start PolicyEvaluationEvent when VulnerabilityAnalysisEvent is succesful
+                vae.onSuccess(new PolicyEvaluationEvent(detachedFlattenedComponent).project(detachedProject));
                 Event.dispatch(vae);
-                Event.dispatch(new RepositoryMetaEvent(detachedFlattenedComponent));
+
+                // Repository Metadata analysis
+                final var rme = new RepositoryMetaEvent(detachedFlattenedComponent);
+                // Start PolicyEvaluationEvent again when RepositoryMetaEvent is succesful,
+                // as it might trigger new violations
+                rme.onSuccess(new PolicyEvaluationEvent(detachedFlattenedComponent).project(detachedProject));
+                Event.dispatch(rme);
+
                 LOGGER.info("Processed " + flattenedComponents.size() + " components and " + flattenedServices.size() + " services uploaded to project " + event.getProjectUuid());
                 Notification.dispatch(new Notification()
                         .scope(NotificationScope.PORTFOLIO)

@@ -52,6 +52,8 @@ docker stack deploy -c docker-compose.yml dtrack
 
 ### Quickstart (Manual Execution)
 
+> **NOTE:** the bundled container does _not_ support [OpenID Connect authentication]({{ site.baseurl }}{% link _docs/getting-started/openidconnect-configuration.md %}).
+
 ```bash
 # Pull the image from the Docker Hub OWASP repo
 docker pull dependencytrack/bundled
@@ -147,6 +149,10 @@ services:
     # - ALPINE_CORS_EXPOSE_HEADERS=Origin, Content-Type, Authorization, X-Requested-With, Content-Length, Accept, Origin, X-Api-Key, X-Total-Count
     # - ALPINE_CORS_ALLOW_CREDENTIALS=true
     # - ALPINE_CORS_MAX_AGE=3600
+    #
+    # Optional logging configuration
+    # - LOGGING_LEVEL=INFO
+    # - LOGGING_CONFIG_PATH=logback.xml
     #
     # Optional metrics properties
     # - ALPINE_METRICS_ENABLED=true

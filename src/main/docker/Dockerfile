@@ -1,6 +1,6 @@
-FROM eclipse-temurin:17.0.6_10-jre-focal@sha256:22942ca3ffac6e593063e33a225c458e315afa2c0dddfdbe15d337dd9130c70c AS jre-build
+FROM eclipse-temurin:21.0.1_12-jre-jammy@sha256:5f85d29db9d2a08724c958d0788763e36a72aadf71632761881a81e87bff260e AS jre-build
 
-FROM debian:bullseye-20230411-slim@sha256:9404b05bd09b57c76eccc0c5505b3c88b5feccac808d9b193a4fbac87bb44745
+FROM debian:stable-slim@sha256:375fb84f3c64691a1b9a9ff5ff3905173dcd0c5e11bc2aebd5c3472a139fa2b4
 
 # Arguments that can be passed at build time
 # Directory names must end with / to avoid errors when ADDing and COPYing
@@ -32,7 +32,8 @@ ENV TZ=Etc/UTC \
     HOME=${DATA_DIR} \
     # Default notification publisher templates override environment variables
     DEFAULT_TEMPLATES_OVERRIDE_ENABLED=false \
-    DEFAULT_TEMPLATES_OVERRIDE_BASE_DIRECTORY=${DATA_DIR}
+    DEFAULT_TEMPLATES_OVERRIDE_BASE_DIRECTORY=${DATA_DIR} \
+    LOGGING_CONFIG_PATH="logback.xml"
 
 # Create the directories where the WAR will be deployed to (${APP_DIR}) and Dependency-Track will store its data (${DATA_DIR})
 # Create a user and assign home directory to a ${DATA_DIR}
@@ -52,7 +53,7 @@ RUN mkdir -p ${APP_DIR} ${DATA_DIR} \
 COPY --from=jre-build /opt/java/openjdk $JAVA_HOME
 
 # Copy the compiled WAR to the application directory created above
-COPY ./target/${WAR_FILENAME} ${APP_DIR}
+COPY ./target/${WAR_FILENAME} ./src/main/docker/logback-json.xml ${APP_DIR}
 
 # Specify the user to run as (in numeric format for compatibility with Kubernetes/OpenShift's SCC)
 USER ${UID}
@@ -61,13 +62,19 @@ USER ${UID}
 WORKDIR ${APP_DIR}
 
 # Launch Dependency-Track
-CMD exec java ${JAVA_OPTIONS} ${EXTRA_JAVA_OPTIONS} --add-opens java.base/java.util.concurrent=ALL-UNNAMED -DdependencyTrack.logging.level=${LOGGING_LEVEL} -jar ${WAR_FILENAME} -context ${CONTEXT} -port 8081
+CMD exec java ${JAVA_OPTIONS} ${EXTRA_JAVA_OPTIONS} \
+    --add-opens java.base/java.util.concurrent=ALL-UNNAMED \
+    -Dlogback.configurationFile=${LOGGING_CONFIG_PATH} \
+    -DdependencyTrack.logging.level=${LOGGING_LEVEL} \
+    -jar ${WAR_FILENAME} \
+    -context ${CONTEXT} \
+    -port 8081
 
 # Specify which port Dependency-Track listens on
 EXPOSE 8081
 
 # Add a healthcheck using the Dependency-Track version API
-HEALTHCHECK --interval=30s --timeout=3s CMD wget --no-proxy -q -O /dev/null http://127.0.0.1:8080${CONTEXT}health || exit 1
+HEALTHCHECK --interval=30s --start-period=60s --timeout=3s CMD wget -t 1 -T 3 --no-proxy -q -O /dev/null http://127.0.0.1:8080${CONTEXT}health || exit 1
 
 # metadata labels
 LABEL \

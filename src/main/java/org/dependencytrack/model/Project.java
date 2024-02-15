@@ -31,9 +31,12 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
+import io.swagger.annotations.ApiModelProperty;
+import org.dependencytrack.persistence.converter.OrganizationalEntityJsonConverter;
 import org.dependencytrack.resources.v1.serializers.CustomPackageURLSerializer;
 
 import javax.jdo.annotations.Column;
+import javax.jdo.annotations.Convert;
 import javax.jdo.annotations.Element;
 import javax.jdo.annotations.Extension;
 import javax.jdo.annotations.FetchGroup;
@@ -45,8 +48,8 @@ import javax.jdo.annotations.Order;
 import javax.jdo.annotations.PersistenceCapable;
 import javax.jdo.annotations.Persistent;
 import javax.jdo.annotations.PrimaryKey;
-import javax.jdo.annotations.Unique;
 import javax.jdo.annotations.Serialized;
+import javax.jdo.annotations.Unique;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
@@ -73,6 +76,7 @@ import java.util.UUID;
                 @Persistent(name = "name"),
                 @Persistent(name = "author"),
                 @Persistent(name = "publisher"),
+                @Persistent(name = "supplier"),
                 @Persistent(name = "group"),
                 @Persistent(name = "name"),
                 @Persistent(name = "description"),
@@ -86,7 +90,11 @@ import java.util.UUID;
                 @Persistent(name = "children"),
                 @Persistent(name = "properties"),
                 @Persistent(name = "tags"),
-                @Persistent(name = "accessTeams")
+                @Persistent(name = "accessTeams"),
+                @Persistent(name = "metadata")
+        }),
+        @FetchGroup(name = "METADATA", members = {
+                @Persistent(name = "metadata")
         }),
         @FetchGroup(name = "METRICS_UPDATE", members = {
                 @Persistent(name = "id"),
@@ -107,6 +115,7 @@ public class Project implements Serializable {
      */
     public enum FetchGroup {
         ALL,
+        METADATA,
         METRICS_UPDATE,
         PARENT
     }
@@ -129,6 +138,16 @@ public class Project implements Serializable {
     @JsonDeserialize(using = TrimmedStringDeserializer.class)
     @Pattern(regexp = RegexSequence.Definition.PRINTABLE_CHARS, message = "The publisher may only contain printable characters")
     private String publisher;
+
+    @Persistent(defaultFetchGroup = "true")
+    @Convert(OrganizationalEntityJsonConverter.class)
+    @Column(name = "MANUFACTURER", jdbcType = "CLOB", allowsNull = "true")
+    private OrganizationalEntity manufacturer;
+
+    @Persistent(defaultFetchGroup = "true")
+    @Convert(OrganizationalEntityJsonConverter.class)
+    @Column(name = "SUPPLIER", jdbcType = "CLOB", allowsNull = "true")
+    private OrganizationalEntity supplier;
 
     @Persistent
     @Column(name = "GROUP", jdbcType = "VARCHAR")
@@ -258,9 +277,12 @@ public class Project implements Serializable {
     @Serialized
     private List<ExternalReference> externalReferences;
 
-    private transient ProjectMetrics metrics;
+    @Persistent(mappedBy = "project")
+    @ApiModelProperty(accessMode = ApiModelProperty.AccessMode.READ_ONLY)
+    private ProjectMetadata metadata;
 
-    @JsonIgnore
+    private transient ProjectMetrics metrics;
+    private transient List<ProjectVersion> versions;
     private transient List<Component> dependencyGraph;
 
     public long getId() {
@@ -285,6 +307,22 @@ public class Project implements Serializable {
 
     public void setPublisher(String publisher) {
         this.publisher = publisher;
+    }
+
+    public OrganizationalEntity getManufacturer() {
+        return manufacturer;
+    }
+
+    public void setManufacturer(final OrganizationalEntity manufacturer) {
+        this.manufacturer = manufacturer;
+    }
+
+    public OrganizationalEntity getSupplier() {
+        return supplier;
+    }
+
+    public void setSupplier(OrganizationalEntity supplier) {
+        this.supplier = supplier;
     }
 
     public String getGroup() {
@@ -460,6 +498,14 @@ public class Project implements Serializable {
         this.metrics = metrics;
     }
 
+    public List<ProjectVersion> getVersions() {
+        return versions;
+    }
+
+    public void setVersions(List<ProjectVersion> versions) {
+        this.versions = versions;
+    }
+
     public List<Team> getAccessTeams() {
         return accessTeams;
     }
@@ -475,10 +521,20 @@ public class Project implements Serializable {
         this.accessTeams.add(accessTeam);
     }
 
+    public ProjectMetadata getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(final ProjectMetadata metadata) {
+        this.metadata = metadata;
+    }
+
+    @JsonIgnore
     public List<Component> getDependencyGraph() {
         return dependencyGraph;
     }
 
+    @JsonIgnore
     public void setDependencyGraph(List<Component> dependencyGraph) {
         this.dependencyGraph = dependencyGraph;
     }
@@ -499,13 +555,13 @@ public class Project implements Serializable {
             return sb.toString();
         }
     }
-    
+
     private final static class BooleanDefaultTrueSerializer extends JsonSerializer<Boolean> {
 
         @Override
         public void serialize(Boolean value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
             gen.writeBoolean(value != null ? value : true);
         }
-        
+
     }
 }
