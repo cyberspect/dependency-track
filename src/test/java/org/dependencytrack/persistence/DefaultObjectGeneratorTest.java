@@ -14,11 +14,10 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.persistence;
 
-import java.lang.reflect.Method;
 import org.dependencytrack.PersistenceCapableTest;
 import org.dependencytrack.auth.Permissions;
 import org.dependencytrack.model.ConfigPropertyConstants;
@@ -26,6 +25,8 @@ import org.dependencytrack.model.License;
 import org.dependencytrack.notification.publisher.DefaultNotificationPublishers;
 import org.junit.Assert;
 import org.junit.Test;
+
+import java.lang.reflect.Method;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -47,7 +48,7 @@ public class DefaultObjectGeneratorTest extends PersistenceCapableTest {
         Method method = generator.getClass().getDeclaredMethod("loadDefaultLicenses");
         method.setAccessible(true);
         method.invoke(generator);
-        Assert.assertEquals(613, qm.getAllLicensesConcise().size());
+        Assert.assertEquals(704, qm.getAllLicensesConcise().size());
     }
 
     @Test
@@ -101,7 +102,7 @@ public class DefaultObjectGeneratorTest extends PersistenceCapableTest {
         Method method = generator.getClass().getDeclaredMethod("loadDefaultRepositories");
         method.setAccessible(true);
         method.invoke(generator);
-        Assert.assertEquals(15, qm.getAllRepositories().size());
+        Assert.assertEquals(17, qm.getAllRepositories().size());
     }
 
     @Test

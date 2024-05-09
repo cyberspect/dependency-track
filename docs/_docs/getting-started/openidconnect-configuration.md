@@ -2,7 +2,7 @@
 title: OpenID Connect Configuration
 category: Getting Started
 chapter: 1
-order: 10
+order: 11
 ---
 
 > OpenID Connect is supported in Dependency-Track 4.0.0 and above
@@ -21,6 +21,14 @@ If configured properly, users will be able to sign in by clicking the _OpenID_ b
 > Since v4.3.0, [ID tokens](https://openid.net/specs/openid-connect-core-1_0.html#IDToken) are validated and evaluated as well. They even take precedence over `/userinfo`,  
 > which means that Dependency-Track will no longer request the `/userinfo` endpoint if all required claims  
 > are present in the ID token's payload already.
+
+## How OpenID Connect claims are mapped
+
+When someone authenticates using OIDC, the claims provided in the ID token or `/userinfo` API response will be mapped to existing OIDC Groups and the user will be added to any teams which have those groups mapped. To have OIDC users added to a team, you must perform the following steps:
+
+1. Login to Dependency-Track as an administrator and navigate to _Administration_ -> _Access Management_ -> _OpenID Connect Groups_.
+2. Create a group with the name used in the OIDC team claim configured below. The value _must_ match exactly, including case.
+3. If the team you want members of the OIDC group to join already exists, use the _Mapped Teams_ menu to select it. If the team does not exist, open _Administration_ -> _Access Management_ -> _Teams_ to create it and, after having done so, add the OIDC group to the _Mapped OpenID Connect Groups_ list.
 
 ### Example Configurations
 
@@ -104,6 +112,17 @@ Set the redirect URI to `<dependency track host>/static/oidc-callback.html`
 
 <span style="color:red">\*</span> Requires additional configuration, see [Example setup with Keycloak](#example-setup-with-keycloak)
 
+### Default Groups
+
+In cases where team synchronization is not possible, auto-provisioned users can be assigned one or more default teams.
+
+```ini
+alpine.oidc.teams.default=TeamA,TeamB
+```
+
+Note that this feature is intended to be used specifically when team synchronization is *disabled*. 
+If team synchronization is enabled, memberships will be reset upon next login of the respective user.
+
 ### Example setup with Keycloak
 
 The following steps demonstrate how to setup OpenID Connect with Keycloak. Most settings should be applicable to other IdPs as well.
@@ -130,7 +149,7 @@ The following steps demonstrate how to setup OpenID Connect with Keycloak. Most 
 2.  To be able to synchronize team memberships, create a _protocol mapper_ that includes group memberships as `groups` in
     the `/userinfo` endpoint:
 
-        ![Keycloak: Create protocol mapper for groups](/images/screenshots/oidc-keycloak-create-protocol-mapper.png)
+   ![Keycloak: Create protocol mapper for groups](/images/screenshots/oidc-keycloak-create-protocol-mapper.png)
 
         * Mapper Type: `Group Membership`
         * Token Claim Name: `groups`
@@ -197,7 +216,7 @@ $ curl https://auth.example.com/auth/realms/example/protocol/openid-connect/user
 
 6. Login to Dependency-Track as `admin` and navigate to _Administration -> Access Management -> OpenID Connect Groups_
 
-- Create groups with names equivalent to those in Keycloak
+- Create groups with names equivalent to those in Keycloak (these must match exactly, including case)
 - Add teams that the groups should be mapped to
 
   ![Group mappings](/images/screenshots/oidc-groups.png)
@@ -224,12 +243,18 @@ The following steps demonstrate how to setup OpenID Connect with Azure Active Di
    - Supported account types: `Accounts in this organizational directory only`
    - Redirect URI (optional): Leave empty for now
 
-2. Under Authentication, add the following Redirect URI for a Single Page Application and leave all settings at default:
+2. Under Authentication:
+   
+   - Add `https://dependencytrack.example.com/static/oidc-callback.html` as a Single Page Application Redirect URI
+   - leave all settings at default:
 
-   - https://dependencytrack.example.com/static/oidc-callback.html
-
-3. Under Token configuration, click Add groups claim and select the group types you'd like to include (check all options if you're not sure).
-
+3. Under Token configuration:
+   
+   - Click Add groups claim
+   - Select the group types you'd like to include
+     - If you are unsure, start by trying all options
+     - If you are in a large organization and have users with lots of groups, you may want to choice only `Groups assigned to the application` to avoid SSO issues. See #2150
+ 
 4. Under API permissions, add the following Microsoft Graph API permissions:
    - OpenId permissions -> email
    - OpenId permissions -> openid

@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.notification.publisher;
 
@@ -97,6 +97,14 @@ public class MsTeamsPublisherTest extends AbstractWebhookPublisherTest<MsTeamsPu
                                 {
                                   "name": "Group",
                                   "value": "BOM_PROCESSING_FAILED"
+                                },
+                                {
+                                  "name": "Project",
+                                  "value": "pkg:maven/org.acme/projectName@projectVersion"
+                                },
+                                {
+                                  "name": "Project URL",
+                                  "value": "https://example.com/projects/c9c9539a-e381-4b36-ac52-6a7ab83b2c95"
                                 }
                               ],
                               "text": "An error occurred while processing a BOM"
@@ -135,6 +143,14 @@ public class MsTeamsPublisherTest extends AbstractWebhookPublisherTest<MsTeamsPu
                                 {
                                   "name": "Group",
                                   "value": "BOM_PROCESSING_FAILED"
+                                },
+                                {
+                                  "name": "Project",
+                                  "value": "pkg:maven/org.acme/projectName@projectVersion"
+                                },
+                                {
+                                  "name": "Project URL",
+                                  "value": "https://example.com/projects/c9c9539a-e381-4b36-ac52-6a7ab83b2c95"
                                 }
                               ],
                               "text": "An error occurred while processing a BOM"

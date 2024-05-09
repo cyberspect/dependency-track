@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.notification;
 
@@ -61,6 +61,8 @@ public class NotificationConstants {
         public static final String VEX_CONSUMED = "Vulnerability Exploitability Exchange (VEX) Consumed";
         public static final String VEX_PROCESSED = "Vulnerability Exploitability Exchange (VEX) Processed";
         public static final String PROJECT_CREATED = "Project Added";
+        public static final String USER_CREATED = "User Created";
+        public static final String USER_DELETED = "User Deleted";
     }
 
 }

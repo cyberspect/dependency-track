@@ -14,11 +14,10 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.resources.v1;
 
-import alpine.common.logging.Logger;
 import alpine.server.auth.PermissionRequired;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -30,6 +29,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.dependencytrack.auth.Permissions;
 import org.dependencytrack.model.Project;
 import org.dependencytrack.model.ProjectProperty;
+import org.dependencytrack.model.validation.ValidUuid;
 import org.dependencytrack.persistence.QueryManager;
 
 import javax.validation.Validator;
@@ -55,14 +55,13 @@ import java.util.List;
 @Api(value = "projectProperty", authorizations = @Authorization(value = "X-Api-Key"))
 public class ProjectPropertyResource extends AbstractConfigPropertyResource {
 
-    private static final Logger LOGGER = Logger.getLogger(ProjectPropertyResource.class);
-
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Returns a list of all ProjectProperties for the specified project",
             response = ProjectProperty.class,
-            responseContainer = "List"
+            responseContainer = "List",
+            notes = "<p>Requires permission <strong>PORTFOLIO_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -71,8 +70,8 @@ public class ProjectPropertyResource extends AbstractConfigPropertyResource {
     })
     @PermissionRequired(Permissions.Constants.PORTFOLIO_MANAGEMENT)
     public Response getProperties(
-            @ApiParam(value = "The UUID of the project to retrieve properties for", required = true)
-            @PathParam("uuid") String uuid) {
+            @ApiParam(value = "The UUID of the project to retrieve properties for", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid) {
         try (QueryManager qm = new QueryManager(getAlpineRequest())) {
             final Project project = qm.getObjectByUuid(Project.class, uuid);
             if (project != null) {
@@ -104,7 +103,8 @@ public class ProjectPropertyResource extends AbstractConfigPropertyResource {
     @ApiOperation(
             value = "Creates a new project property",
             response = ProjectProperty.class,
-            code = 201
+            code = 201,
+            notes = "<p>Requires permission <strong>PORTFOLIO_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -114,8 +114,8 @@ public class ProjectPropertyResource extends AbstractConfigPropertyResource {
     })
     @PermissionRequired(Permissions.Constants.PORTFOLIO_MANAGEMENT)
     public Response createProperty(
-            @ApiParam(value = "The UUID of the project to create a property for", required = true)
-            @PathParam("uuid") String uuid,
+            @ApiParam(value = "The UUID of the project to create a property for", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid,
             ProjectProperty json) {
         final Validator validator = super.getValidator();
         failOnValidationError(
@@ -160,7 +160,8 @@ public class ProjectPropertyResource extends AbstractConfigPropertyResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Updates a project property",
-            response = ProjectProperty.class
+            response = ProjectProperty.class,
+            notes = "<p>Requires permission <strong>PORTFOLIO_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -169,8 +170,8 @@ public class ProjectPropertyResource extends AbstractConfigPropertyResource {
     })
     @PermissionRequired(Permissions.Constants.PORTFOLIO_MANAGEMENT)
     public Response updateProperty(
-            @ApiParam(value = "The UUID of the project to create a property for", required = true)
-            @PathParam("uuid") String uuid,
+            @ApiParam(value = "The UUID of the project to create a property for", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid,
             ProjectProperty json) {
         final Validator validator = super.getValidator();
         failOnValidationError(
@@ -202,7 +203,8 @@ public class ProjectPropertyResource extends AbstractConfigPropertyResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Deletes a config property",
-            response = ProjectProperty.class
+            response = ProjectProperty.class,
+            notes = "<p>Requires permission <strong>PORTFOLIO_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -211,8 +213,8 @@ public class ProjectPropertyResource extends AbstractConfigPropertyResource {
     })
     @PermissionRequired(Permissions.Constants.PORTFOLIO_MANAGEMENT)
     public Response deleteProperty(
-            @ApiParam(value = "The UUID of the project to delete a property from", required = true)
-            @PathParam("uuid") String uuid,
+            @ApiParam(value = "The UUID of the project to delete a property from", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid,
             ProjectProperty json) {
         final Validator validator = super.getValidator();
         failOnValidationError(

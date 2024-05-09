@@ -14,12 +14,13 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.resources.v1;
 
 import alpine.common.logging.Logger;
 import alpine.event.framework.Event;
+import alpine.model.Team;
 import alpine.persistence.PaginatedResult;
 import alpine.server.auth.PermissionRequired;
 import alpine.server.resources.AlpineResource;
@@ -37,7 +38,9 @@ import org.dependencytrack.event.CloneProjectEvent;
 import org.dependencytrack.model.Classifier;
 import org.dependencytrack.model.Project;
 import org.dependencytrack.model.Tag;
+import org.dependencytrack.model.validation.ValidUuid;
 import org.dependencytrack.persistence.QueryManager;
+import org.dependencytrack.resources.v1.openapi.PaginatedApi;
 import org.dependencytrack.resources.v1.vo.CloneProjectRequest;
 
 import javax.jdo.FetchGroup;
@@ -79,8 +82,10 @@ public class ProjectResource extends AlpineResource {
             value = "Returns a list of all projects",
             response = Project.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects")
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects"),
+            notes = "<p>Requires permission <strong>VIEW_PORTFOLIO</strong></p>"
     )
+    @PaginatedApi
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized")
     })
@@ -90,9 +95,19 @@ public class ProjectResource extends AlpineResource {
                                 @ApiParam(value = "Optionally excludes inactive projects from being returned", required = false)
                                 @QueryParam("excludeInactive") boolean excludeInactive,
                                 @ApiParam(value = "Optionally excludes children projects from being returned", required = false)
-                                @QueryParam("onlyRoot") boolean onlyRoot) {
+                                @QueryParam("onlyRoot") boolean onlyRoot,
+                                @ApiParam(value = "The UUID of the team which projects shall be excluded", format = "uuid", required = false)
+                                @QueryParam("notAssignedToTeamWithUuid") @ValidUuid String notAssignedToTeamWithUuid) {
         try (QueryManager qm = new QueryManager(getAlpineRequest())) {
-            final PaginatedResult result = (name != null) ? qm.getProjects(name, excludeInactive, onlyRoot) : qm.getProjects(true, excludeInactive, onlyRoot);
+            Team notAssignedToTeam = null;
+            if (StringUtils.isNotEmpty(notAssignedToTeamWithUuid)) {
+                notAssignedToTeam = qm.getObjectByUuid(Team.class, notAssignedToTeamWithUuid);
+                if (notAssignedToTeam == null) {
+                    return Response.status(Response.Status.NOT_FOUND).entity("The UUID of the team could not be found.").build();
+                }
+            }
+
+            final PaginatedResult result = (name != null) ? qm.getProjects(name, excludeInactive, onlyRoot, notAssignedToTeam) : qm.getProjects(true, excludeInactive, onlyRoot, notAssignedToTeam);
             return Response.ok(result.getObjects()).header(TOTAL_COUNT_HEADER, result.getTotal()).build();
         }
     }
@@ -102,7 +117,8 @@ public class ProjectResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Returns a specific project",
-            response = Project.class
+            response = Project.class,
+            notes = "<p>Requires permission <strong>VIEW_PORTFOLIO</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -111,8 +127,8 @@ public class ProjectResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.VIEW_PORTFOLIO)
     public Response getProject(
-            @ApiParam(value = "The UUID of the project to retrieve", required = true)
-            @PathParam("uuid") String uuid) {
+            @ApiParam(value = "The UUID of the project to retrieve", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid) {
         try (QueryManager qm = new QueryManager()) {
             final Project project = qm.getProject(uuid);
             if (project != null) {
@@ -130,7 +146,12 @@ public class ProjectResource extends AlpineResource {
     @GET
     @Path("/lookup")
     @Produces(MediaType.APPLICATION_JSON)
-    @ApiOperation(value = "Returns a specific project by its name and version", response = Project.class, nickname = "getProjectByNameAndVersion")
+    @ApiOperation(
+            value = "Returns a specific project by its name and version",
+            response = Project.class,
+            nickname = "getProjectByNameAndVersion",
+            notes = "<p>Requires permission <strong>VIEW_PORTFOLIO</strong></p>"
+    )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
             @ApiResponse(code = 403, message = "Access to the specified project is forbidden"),
@@ -163,8 +184,10 @@ public class ProjectResource extends AlpineResource {
             value = "Returns a list of all projects by tag",
             response = Project.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects with the tag")
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects with the tag"),
+            notes = "<p>Requires permission <strong>VIEW_PORTFOLIO</strong></p>"
     )
+    @PaginatedApi
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized")
     })
@@ -190,8 +213,10 @@ public class ProjectResource extends AlpineResource {
             value = "Returns a list of all projects by classifier",
             response = Project.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects of the specified classifier")
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects of the specified classifier"),
+            notes = "<p>Requires permission <strong>VIEW_PORTFOLIO</strong></p>"
     )
+    @PaginatedApi
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized")
     })
@@ -217,13 +242,20 @@ public class ProjectResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Creates a new project",
-            notes = "If a parent project exists, the UUID of the parent project is required ",
+            notes = """
+                    <p>If a parent project exists, <code>parent.uuid</code> is required</p>
+                    <p>Requires permission <strong>PORTFOLIO_MANAGEMENT</strong></p>
+                    """,
             response = Project.class,
             code = 201
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
-            @ApiResponse(code = 409, message = "- An inactive Parent cannot be selected as parent\n- A project with the specified name already exists"),
+            @ApiResponse(code = 409, message = """
+                    <ul>
+                      <li>An inactive Parent cannot be selected as parent, or</li>
+                      <li>A project with the specified name already exists</li>
+                    </ul>"""),
     })
     @PermissionRequired(Permissions.Constants.PORTFOLIO_MANAGEMENT)
     public Response createProject(Project jsonProject) {
@@ -271,12 +303,19 @@ public class ProjectResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Updates a project",
-            response = Project.class
+            response = Project.class,
+            notes = "<p>Requires permission <strong>PORTFOLIO_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
             @ApiResponse(code = 404, message = "The UUID of the project could not be found"),
-            @ApiResponse(code = 409, message = "- An inactive Parent cannot be selected as parent\n- Project cannot be set to inactive if active children are present\n- A project with the specified name already exists\n- A project cannot select itself as a parent")
+            @ApiResponse(code = 409, message = """
+                    <ul>
+                      <li>An inactive Parent cannot be selected as parent, or</li>
+                      <li>Project cannot be set to inactive if active children are present, or</li>
+                      <li>A project with the specified name already exists, or</li>
+                      <li>A project cannot select itself as a parent</li>
+                    </ul>""")
     })
     @PermissionRequired(Permissions.Constants.PORTFOLIO_MANAGEMENT)
     public Response updateProject(Project jsonProject) {
@@ -333,17 +372,24 @@ public class ProjectResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Partially updates a project",
-            response = Project.class
+            response = Project.class,
+            notes = "<p>Requires permission <strong>PORTFOLIO_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
             @ApiResponse(code = 404, message = "The UUID of the project could not be found"),
-            @ApiResponse(code = 409, message = "- An inactive Parent cannot be selected as parent\n- Project cannot be set to inactive if active children are present\n- A project with the specified name already exists\n- A project cannot select itself as a parent")
+            @ApiResponse(code = 409, message = """
+                    <ul>
+                      <li>An inactive Parent cannot be selected as parent, or</li>
+                      <li>Project cannot be set to inactive if active children are present, or</li>
+                      <li>A project with the specified name already exists, or</li>
+                      <li>A project cannot select itself as a parent</li>
+                    </ul>""")
     })
     @PermissionRequired(Permissions.Constants.PORTFOLIO_MANAGEMENT)
     public Response patchProject(
-            @ApiParam(value = "The UUID of the project to modify", required = true)
-            @PathParam("uuid") String uuid,
+            @ApiParam(value = "The UUID of the project to modify", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid,
             Project jsonProject) {
         final Validator validator = getValidator();
         failOnValidationError(
@@ -459,7 +505,8 @@ public class ProjectResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Deletes a project",
-            code = 204
+            code = 204,
+            notes = "<p>Requires permission <strong>PORTFOLIO_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -468,8 +515,8 @@ public class ProjectResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.PORTFOLIO_MANAGEMENT)
     public Response deleteProject(
-            @ApiParam(value = "The UUID of the project to delete", required = true)
-            @PathParam("uuid") String uuid) {
+            @ApiParam(value = "The UUID of the project to delete", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid) {
         try (QueryManager qm = new QueryManager()) {
             final Project project = qm.getObjectByUuid(Project.class, uuid, Project.FetchGroup.ALL.name());
             if (project != null) {
@@ -492,7 +539,8 @@ public class ProjectResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Clones a project",
-            response = Project.class
+            response = Project.class,
+            notes = "<p>Requires permission <strong>PORTFOLIO_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -516,8 +564,9 @@ public class ProjectResource extends AlpineResource {
                 }
 
                 LOGGER.info("Project " + sourceProject + " is being cloned by " + super.getPrincipal().getName());
-                Event.dispatch(new CloneProjectEvent(jsonRequest));
-                return Response.ok().build();
+                CloneProjectEvent event = new CloneProjectEvent(jsonRequest);
+                Event.dispatch(event);
+                return Response.ok(java.util.Collections.singletonMap("token", event.getChainIdentifier())).build();
             } else {
                 return Response.status(Response.Status.NOT_FOUND).entity("The UUID of the project could not be found.").build();
             }
@@ -532,16 +581,18 @@ public class ProjectResource extends AlpineResource {
             value = "Returns a list of all children for a project",
             response = Project.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects")
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects"),
+            notes = "<p>Requires permission <strong>VIEW_PORTFOLIO</strong></p>"
     )
+    @PaginatedApi
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
             @ApiResponse(code = 403, message = "Access to the specified project is forbidden"),
             @ApiResponse(code = 404, message = "The UUID of the project could not be found")
     })
     @PermissionRequired(Permissions.Constants.VIEW_PORTFOLIO)
-    public Response getChildrenProjects(@ApiParam(value = "The UUID of the project to get the children from", required = true)
-                                            @PathParam("uuid") String uuid,
+    public Response getChildrenProjects(@ApiParam(value = "The UUID of the project to get the children from", format = "uuid", required = true)
+                                        @PathParam("uuid") @ValidUuid String uuid,
                                         @ApiParam(value = "Optionally excludes inactive projects from being returned", required = false)
                                         @QueryParam("excludeInactive") boolean excludeInactive) {
         try (QueryManager qm = new QueryManager(getAlpineRequest())) {
@@ -566,8 +617,10 @@ public class ProjectResource extends AlpineResource {
             value = "Returns a list of all children for a project by classifier",
             response = Project.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects")
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects"),
+            notes = "<p>Requires permission <strong>VIEW_PORTFOLIO</strong></p>"
     )
+    @PaginatedApi
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
             @ApiResponse(code = 403, message = "Access to the specified project is forbidden"),
@@ -577,8 +630,8 @@ public class ProjectResource extends AlpineResource {
     public Response getChildrenProjectsByClassifier(
             @ApiParam(value = "The classifier to query on", required = true)
             @PathParam("classifier") String classifierString,
-            @ApiParam(value = "The UUID of the project to get the children from", required = true)
-            @PathParam("uuid") String uuid,
+            @ApiParam(value = "The UUID of the project to get the children from", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid,
             @ApiParam(value = "Optionally excludes inactive projects from being returned", required = false)
             @QueryParam("excludeInactive") boolean excludeInactive) {
         try (QueryManager qm = new QueryManager(getAlpineRequest())) {
@@ -604,8 +657,10 @@ public class ProjectResource extends AlpineResource {
             value = "Returns a list of all children for a project by tag",
             response = Project.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects")
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects"),
+            notes = "<p>Requires permission <strong>VIEW_PORTFOLIO</strong></p>"
     )
+    @PaginatedApi
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
             @ApiResponse(code = 403, message = "Access to the specified project is forbidden"),
@@ -615,8 +670,8 @@ public class ProjectResource extends AlpineResource {
     public Response getChildrenProjectsByTag(
             @ApiParam(value = "The tag to query on", required = true)
             @PathParam("tag") String tagString,
-            @ApiParam(value = "The UUID of the project to get the children from", required = true)
-            @PathParam("uuid") String uuid,
+            @ApiParam(value = "The UUID of the project to get the children from", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid,
             @ApiParam(value = "Optionally excludes inactive projects from being returned", required = false)
             @QueryParam("excludeInactive") boolean excludeInactive) {
         try (QueryManager qm = new QueryManager(getAlpineRequest())) {
@@ -642,8 +697,10 @@ public class ProjectResource extends AlpineResource {
             value = "Returns a list of all projects without the descendants of the selected project",
             response = Project.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects")
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of projects"),
+            notes = "<p>Requires permission <strong>VIEW_PORTFOLIO</strong></p>"
     )
+    @PaginatedApi
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
             @ApiResponse(code = 403, message = "Access to the specified project is forbidden"),
@@ -651,8 +708,8 @@ public class ProjectResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.VIEW_PORTFOLIO)
     public Response getProjectsWithoutDescendantsOf(
-                                @ApiParam(value = "The UUID of the project which descendants will be excluded", required = true)
-                                @PathParam("uuid") String uuid,
+                                @ApiParam(value = "The UUID of the project which descendants will be excluded", format = "uuid", required = true)
+                                @PathParam("uuid") @ValidUuid String uuid,
                                 @ApiParam(value = "The optional name of the project to query on", required = false)
                                 @QueryParam("name") String name,
                                 @ApiParam(value = "Optionally excludes inactive projects from being returned", required = false)

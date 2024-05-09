@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.persistence;
 
@@ -39,6 +39,7 @@ import org.dependencytrack.model.Classifier;
 import org.dependencytrack.model.Component;
 import org.dependencytrack.model.ConfigPropertyConstants;
 import org.dependencytrack.model.FindingAttribution;
+import org.dependencytrack.model.PolicyViolation;
 import org.dependencytrack.model.Project;
 import org.dependencytrack.model.ProjectMetadata;
 import org.dependencytrack.model.ProjectProperty;
@@ -88,7 +89,7 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
      * @return a List of Projects
      */
     @Override
-    public PaginatedResult getProjects(final boolean includeMetrics, final boolean excludeInactive, final boolean onlyRoot) {
+    public PaginatedResult getProjects(final boolean includeMetrics, final boolean excludeInactive, final boolean onlyRoot, final Team notAssignedToTeam) {
         final PaginatedResult result;
         final Query<Project> query = pm.newQuery(Project.class);
         if (orderBy == null) {
@@ -101,6 +102,10 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
         if (onlyRoot){
             filterBuilder.excludeChildProjects();
             query.getFetchPlan().addGroup(Project.FetchGroup.ALL.name());
+        }
+
+        if(notAssignedToTeam != null) {
+            filterBuilder.notWithTeam(notAssignedToTeam);
         }
 
         if (filter != null) {
@@ -136,7 +141,7 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
      */
     @Override
     public PaginatedResult getProjects(final boolean includeMetrics) {
-        return getProjects(includeMetrics, false, false);
+        return getProjects(includeMetrics, false, false, null);
     }
 
     /**
@@ -179,7 +184,7 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
      * @return a List of Project objects
      */
     @Override
-    public PaginatedResult getProjects(final String name, final boolean excludeInactive, final boolean onlyRoot) {
+    public PaginatedResult getProjects(final String name, final boolean excludeInactive, final boolean onlyRoot, final Team notAssignedToTeam) {
         final Query<Project> query = pm.newQuery(Project.class);
         if (orderBy == null) {
             query.setOrdering("version desc");
@@ -192,6 +197,10 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
         if (onlyRoot) {
             filterBuilder.excludeChildProjects();
             query.getFetchPlan().addGroup(Project.FetchGroup.ALL.name());
+        }
+
+        if(notAssignedToTeam != null) {
+            filterBuilder.notWithTeam(notAssignedToTeam);
         }
 
         final String queryFilter = filterBuilder.buildFilter();
@@ -568,7 +577,7 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
     @Override
     public Project clone(UUID from, String newVersion, boolean includeTags, boolean includeProperties,
                          boolean includeComponents, boolean includeServices, boolean includeAuditHistory,
-                         boolean includeACL) {
+                         boolean includeACL, boolean includePolicyViolations) {
         final Project source = getObjectByUuid(Project.class, from, Project.FetchGroup.ALL.name());
         if (source == null) {
             LOGGER.warn("Project with UUID %s was supposed to be cloned, but it does not exist anymore".formatted(from));
@@ -639,7 +648,7 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
                     // Add vulnerabilties and finding attribution from the source component to the cloned component
                     for (Vulnerability vuln: sourceComponent.getVulnerabilities()) {
                         final FindingAttribution sourceAttribution = this.getFindingAttribution(vuln, sourceComponent);
-                        this.addVulnerability(vuln, clonedComponent, sourceAttribution.getAnalyzerIdentity(), sourceAttribution.getAlternateIdentifier(), sourceAttribution.getReferenceUrl());
+                        this.addVulnerability(vuln, clonedComponent, sourceAttribution.getAnalyzerIdentity(), sourceAttribution.getAlternateIdentifier(), sourceAttribution.getReferenceUrl(), sourceAttribution.getAttributedOn());
                     }
                     clonedComponents.put(sourceComponent.getId(), clonedComponent);
                 }
@@ -693,6 +702,19 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
                 project.setAccessTeams(new ArrayList<>(accessTeams));
             }
         }
+
+     
+       if(includeComponents && includePolicyViolations){
+            final List<PolicyViolation> sourcePolicyViolations = getAllPolicyViolations(source);
+            if(sourcePolicyViolations != null){
+                for(final PolicyViolation policyViolation: sourcePolicyViolations){
+                final Component destinationComponent = clonedComponents.get(policyViolation.getComponent().getId());
+                final PolicyViolation clonedPolicyViolation = clonePolicyViolation(policyViolation, destinationComponent);
+                persist(clonedPolicyViolation);
+                }   
+            }
+       }
+        
 
         project = getObjectById(Project.class, project.getId());
         Event.dispatch(new IndexEvent(IndexEvent.Action.CREATE, project));

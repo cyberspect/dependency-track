@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.resources.v1;
 
@@ -33,7 +33,9 @@ import org.dependencytrack.auth.Permissions;
 import org.dependencytrack.model.Policy;
 import org.dependencytrack.model.Project;
 import org.dependencytrack.model.Tag;
+import org.dependencytrack.model.validation.ValidUuid;
 import org.dependencytrack.persistence.QueryManager;
+import org.dependencytrack.resources.v1.openapi.PaginatedApi;
 
 import javax.validation.Validator;
 import javax.ws.rs.Consumes;
@@ -64,8 +66,10 @@ public class PolicyResource extends AlpineResource {
             value = "Returns a list of all policies",
             response = Policy.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of policies")
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of policies"),
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
+    @PaginatedApi
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized")
     })
@@ -82,7 +86,8 @@ public class PolicyResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Returns a specific policy",
-            response = Policy.class
+            response = Policy.class,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -90,8 +95,8 @@ public class PolicyResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.POLICY_MANAGEMENT)
     public Response getPolicy(
-            @ApiParam(value = "The UUID of the policy to retrieve", required = true)
-            @PathParam("uuid") String uuid) {
+            @ApiParam(value = "The UUID of the policy to retrieve", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid) {
         try (QueryManager qm = new QueryManager()) {
             final Policy policy = qm.getObjectByUuid(Policy.class, uuid);
             if (policy != null) {
@@ -108,7 +113,8 @@ public class PolicyResource extends AlpineResource {
     @ApiOperation(
             value = "Creates a new policy",
             response = Policy.class,
-            code = 201
+            code = 201,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -147,7 +153,8 @@ public class PolicyResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Updates a policy",
-            response = Policy.class
+            response = Policy.class,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -180,7 +187,8 @@ public class PolicyResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Deletes a policy",
-            code = 204
+            code = 204,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -188,8 +196,8 @@ public class PolicyResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.POLICY_MANAGEMENT)
     public Response deletePolicy(
-            @ApiParam(value = "The UUID of the policy to delete", required = true)
-            @PathParam("uuid") String uuid) {
+            @ApiParam(value = "The UUID of the policy to delete", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid) {
         try (QueryManager qm = new QueryManager()) {
             final Policy policy = qm.getObjectByUuid(Policy.class, uuid);
             if (policy != null) {
@@ -207,7 +215,8 @@ public class PolicyResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Adds a project to a policy",
-            response = Policy.class
+            response = Policy.class,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The policy already has the specified project assigned"),
@@ -216,10 +225,10 @@ public class PolicyResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.POLICY_MANAGEMENT)
     public Response addProjectToPolicy(
-            @ApiParam(value = "The UUID of the policy to add a project to", required = true)
-            @PathParam("policyUuid") String policyUuid,
-            @ApiParam(value = "The UUID of the project to add to the rule", required = true)
-            @PathParam("projectUuid") String projectUuid) {
+            @ApiParam(value = "The UUID of the policy to add a project to", format = "uuid", required = true)
+            @PathParam("policyUuid") @ValidUuid String policyUuid,
+            @ApiParam(value = "The UUID of the project to add to the rule", format = "uuid", required = true)
+            @PathParam("projectUuid") @ValidUuid String projectUuid) {
         try (QueryManager qm = new QueryManager()) {
             final Policy policy = qm.getObjectByUuid(Policy.class, policyUuid);
             if (policy == null) {
@@ -245,7 +254,8 @@ public class PolicyResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Removes a project from a policy",
-            response = Policy.class
+            response = Policy.class,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The policy does not have the specified project assigned"),
@@ -254,10 +264,10 @@ public class PolicyResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.POLICY_MANAGEMENT)
     public Response removeProjectFromPolicy(
-            @ApiParam(value = "The UUID of the policy to remove the project from", required = true)
-            @PathParam("policyUuid") String policyUuid,
-            @ApiParam(value = "The UUID of the project to remove from the policy", required = true)
-            @PathParam("projectUuid") String projectUuid) {
+            @ApiParam(value = "The UUID of the policy to remove the project from", format = "uuid", required = true)
+            @PathParam("policyUuid") @ValidUuid String policyUuid,
+            @ApiParam(value = "The UUID of the project to remove from the policy", format = "uuid", required = true)
+            @PathParam("projectUuid") @ValidUuid String projectUuid) {
         try (QueryManager qm = new QueryManager()) {
             final Policy policy = qm.getObjectByUuid(Policy.class, policyUuid);
             if (policy == null) {
@@ -283,7 +293,8 @@ public class PolicyResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Adds a tag to a policy",
-            response = Policy.class
+            response = Policy.class,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The policy already has the specified tag assigned"),
@@ -292,10 +303,10 @@ public class PolicyResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.POLICY_MANAGEMENT)
     public Response addTagToPolicy(
-            @ApiParam(value = "The UUID of the policy to add a project to", required = true)
-            @PathParam("policyUuid") String policyUuid,
+            @ApiParam(value = "The UUID of the policy to add a project to", format = "uuid", required = true)
+            @PathParam("policyUuid") @ValidUuid String policyUuid,
             @ApiParam(value = "The name of the tag to add to the rule", required = true)
-            @PathParam("tagName") String tagName) {
+            @PathParam("tagName")String tagName) {
         try (QueryManager qm = new QueryManager()) {
             final Policy policy = qm.getObjectByUuid(Policy.class, policyUuid);
             if (policy == null) {
@@ -322,7 +333,8 @@ public class PolicyResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Removes a tag from a policy",
-            response = Policy.class
+            response = Policy.class,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The policy does not have the specified tag assigned"),
@@ -331,8 +343,8 @@ public class PolicyResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.POLICY_MANAGEMENT)
     public Response removeTagFromPolicy(
-            @ApiParam(value = "The UUID of the policy to remove the tag from", required = true)
-            @PathParam("policyUuid") String policyUuid,
+            @ApiParam(value = "The UUID of the policy to remove the tag from", format = "uuid", required = true)
+            @PathParam("policyUuid") @ValidUuid String policyUuid,
             @ApiParam(value = "The name of the tag to remove from the policy", required = true)
             @PathParam("tagName") String tagName) {
         try (QueryManager qm = new QueryManager()) {

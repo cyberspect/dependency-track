@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.parser.snyk;
 
@@ -146,7 +146,7 @@ public class SnykParser {
             String id = problem.optString("id");
             // CWE
             if (source.equalsIgnoreCase("CWE")) {
-                final Cwe cwe = CweResolver.getInstance().resolve(qm, id);
+                final Cwe cwe = CweResolver.getInstance().lookup(id);
                 if (cwe != null) {
                     vulnerability.addCwe(cwe);
                 }

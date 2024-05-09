@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.model;
 
@@ -22,13 +22,6 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class CweTest {
-
-    @Test
-    public void testId() {
-        Cwe cwe = new Cwe();
-        cwe.setId(111L);
-        Assert.assertEquals(111L, cwe.getId());
-    }
 
     @Test
     public void testCweId() {

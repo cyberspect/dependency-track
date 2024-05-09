@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.model;
 
@@ -27,6 +27,7 @@ public enum ConfigPropertyConstants {
     GENERAL_BADGE_ENABLED("general", "badge.enabled", "false", PropertyType.BOOLEAN, "Flag to enable/disable SVG badge support from metrics"),
     EMAIL_SMTP_ENABLED("email", "smtp.enabled", "false", PropertyType.BOOLEAN, "Flag to enable/disable SMTP"),
     EMAIL_SMTP_FROM_ADDR("email", "smtp.from.address", null, PropertyType.STRING, "The from email address to use to send output SMTP mail"),
+    EMAIL_PREFIX("email", "subject.prefix", "[Dependency-Track]", PropertyType.STRING, "The Prefix Subject email to use"),
     EMAIL_SMTP_SERVER_HOSTNAME("email", "smtp.server.hostname", null, PropertyType.STRING, "The hostname or IP address of the SMTP mail server"),
     EMAIL_SMTP_SERVER_PORT("email", "smtp.server.port", null, PropertyType.INTEGER, "The port the SMTP server listens on"),
     EMAIL_SMTP_USERNAME("email", "smtp.username", null, PropertyType.STRING, "The optional username to authenticate with when sending outbound SMTP mail"),
@@ -58,6 +59,10 @@ public enum ConfigPropertyConstants {
     SCANNER_SNYK_API_VERSION("scanner", "snyk.api.version", "2023-06-22", PropertyType.STRING, "Snyk API version"),
     SCANNER_SNYK_CVSS_SOURCE("scanner", "snyk.cvss.source", "NVD", PropertyType.STRING, "Type of source to be prioritized for cvss calculation"),
     SCANNER_SNYK_BASE_URL("scanner", "snyk.base.url", "https://api.snyk.io", PropertyType.URL, "Base Url pointing to the hostname and path for Snyk analysis"),
+    SCANNER_TRIVY_ENABLED("scanner", "trivy.enabled", "false", PropertyType.BOOLEAN, "Flag to enable/disable Trivy Vulnerability Analysis"),
+    SCANNER_TRIVY_API_TOKEN("scanner", "trivy.api.token", null, PropertyType.ENCRYPTEDSTRING, "The API token used for Trivy API authentication"),
+    SCANNER_TRIVY_BASE_URL("scanner", "trivy.base.url", null, PropertyType.URL, "Base Url pointing to the hostname and path for Trivy analysis"),
+    SCANNER_TRIVY_IGNORE_UNFIXED("scanner", "trivy.ignore.unfixed", "false", PropertyType.BOOLEAN, "Flag to ignore unfixed vulnerabilities"),
     VULNERABILITY_SOURCE_NVD_ENABLED("vuln-source", "nvd.enabled", "true", PropertyType.BOOLEAN, "Flag to enable/disable National Vulnerability Database"),
     VULNERABILITY_SOURCE_NVD_FEEDS_URL("vuln-source", "nvd.feeds.url", "https://nvd.nist.gov/feeds", PropertyType.URL, "A base URL pointing to the hostname and path of the NVD feeds"),
     VULNERABILITY_SOURCE_NVD_API_ENABLED("vuln-source", "nvd.api.enabled", "false", PropertyType.BOOLEAN, "Whether to enable NVD mirroring via REST API"),
@@ -103,7 +108,9 @@ public enum ConfigPropertyConstants {
     TASK_SCHEDULER_COMPONENT_ANALYSIS_CACHE_CLEAR_CADENCE("task-scheduler", "component.analysis.cache.clear.cadence", "24", PropertyType.INTEGER, "Cleanup cadence (in hours) for component analysis cache"),
     SEARCH_INDEXES_CONSISTENCY_CHECK_ENABLED("search-indexes", "consistency.check.enabled", "true", PropertyType.BOOLEAN, "Flag to enable lucene indexes periodic consistency check"),
     SEARCH_INDEXES_CONSISTENCY_CHECK_CADENCE("search-indexes", "consistency.check.cadence", "4320", PropertyType.INTEGER, "Lucene indexes consistency check cadence (in minutes)"),
-    SEARCH_INDEXES_CONSISTENCY_CHECK_DELTA_THRESHOLD("search-indexes", "consistency.check.delta.threshold", "20", PropertyType.INTEGER, "Threshold used to trigger an index rebuild when comparing database table and corresponding lucene index (in percentage). It must be an integer between 1 and 100");
+    SEARCH_INDEXES_CONSISTENCY_CHECK_DELTA_THRESHOLD("search-indexes", "consistency.check.delta.threshold", "20", PropertyType.INTEGER, "Threshold used to trigger an index rebuild when comparing database table and corresponding lucene index (in percentage). It must be an integer between 1 and 100"),
+    BOM_PROCESSING_TASK_V2_ENABLED("experimental", "bom.processing.task.v2.enabled", "false", PropertyType.BOOLEAN, "Flag to enable BOM UPLOAD V2"),
+    BOM_VALIDATION_ENABLED("artifact", "bom.validation.enabled", "true", PropertyType.BOOLEAN, "Flag to control bom validation");
 
     private String groupName;
     private String propertyName;

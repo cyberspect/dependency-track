@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 
 package org.dependencytrack.resources.v1;
@@ -25,6 +25,7 @@ import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
 import io.swagger.annotations.Authorization;
@@ -33,6 +34,7 @@ import org.dependencytrack.model.Component;
 import org.dependencytrack.model.Project;
 import org.dependencytrack.model.RepositoryMetaComponent;
 import org.dependencytrack.model.RepositoryType;
+import org.dependencytrack.model.validation.ValidUuid;
 import org.dependencytrack.persistence.QueryManager;
 import org.dependencytrack.persistence.RepositoryQueryManager;
 import org.dependencytrack.resources.v1.vo.DependencyGraphResponse;
@@ -70,7 +72,8 @@ public class DependencyGraphResource extends AlpineResource {
     @ApiOperation(
             value = "Returns a list of specific components and services from project UUID",
             response = DependencyGraphResponse.class,
-            responseContainer = "List"
+            responseContainer = "List",
+            notes = "<p>Requires permission <strong>VIEW_PORTFOLIO</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -78,7 +81,8 @@ public class DependencyGraphResource extends AlpineResource {
             @ApiResponse(code = 404, message = "Any component can be found"),
     })
     @PermissionRequired(Permissions.Constants.VIEW_PORTFOLIO)
-    public Response getComponentsAndServicesByProjectUuid(final @PathParam("uuid") String uuid) {
+    public Response getComponentsAndServicesByProjectUuid(@ApiParam(value = "The UUID of the project", format = "uuid", required = true)
+                                                          final @PathParam("uuid") @ValidUuid String uuid) {
         try (QueryManager qm = new QueryManager()) {
             final Project project = qm.getObjectByUuid(Project.class, uuid);
 
@@ -108,7 +112,8 @@ public class DependencyGraphResource extends AlpineResource {
     @ApiOperation(
             value = "Returns a list of specific components and services from component UUID",
             response = DependencyGraphResponse.class,
-            responseContainer = "List"
+            responseContainer = "List",
+            notes = "<p>Requires permission <strong>VIEW_PORTFOLIO</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -116,7 +121,8 @@ public class DependencyGraphResource extends AlpineResource {
             @ApiResponse(code = 404, message = "Any component can be found"),
     })
     @PermissionRequired(Permissions.Constants.VIEW_PORTFOLIO)
-    public Response getComponentsAndServicesByComponentUuid(final @PathParam("uuid") String uuid) {
+    public Response getComponentsAndServicesByComponentUuid(@ApiParam(value = "The UUID of the component", format = "uuid", required = true)
+                                                            final @PathParam("uuid") @ValidUuid String uuid) {
         try (QueryManager qm = new QueryManager()) {
             final Component component = qm.getObjectByUuid(Component.class, uuid);
             if (component == null) {

@@ -14,14 +14,23 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.util;
 
+import com.mysql.cj.exceptions.MysqlErrorNumbers;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.datanucleus.enhancement.Persistable;
+import org.dependencytrack.persistence.QueryManager;
+import org.h2.jdbc.JdbcSQLIntegrityConstraintViolationException;
+import org.postgresql.util.PSQLState;
 
 import javax.jdo.JDOHelper;
 import javax.jdo.ObjectState;
+import javax.jdo.PersistenceManager;
+import javax.jdo.PersistenceManagerFactory;
+import java.sql.SQLException;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -144,6 +153,19 @@ public final class PersistenceUtil {
     private PersistenceUtil() {
     }
 
+    public static <T, V> boolean applyIfChanged(final T existingObject, final T newObject,
+                                                final Function<T, V> getter, final Consumer<V> setter) {
+        final V existingValue = getter.apply(existingObject);
+        final V newValue = getter.apply(newObject);
+
+        if (!Objects.equals(existingValue, newValue)) {
+            setter.accept(newValue);
+            return true;
+        }
+
+        return false;
+    }
+
     /**
      * Utility method to ensure that a given object is in a persistent state.
      * <p>
@@ -160,14 +182,124 @@ public final class PersistenceUtil {
      * @since 4.10.0
      */
     public static void assertPersistent(final Object object, final String message) {
-        final ObjectState objectState = JDOHelper.getObjectState(object);
-        if (objectState != PERSISTENT_CLEAN
-                && objectState != PERSISTENT_DIRTY
-                && objectState != PERSISTENT_NEW
-                && objectState != PERSISTENT_NONTRANSACTIONAL_DIRTY
-                && objectState != HOLLOW_PERSISTENT_NONTRANSACTIONAL) {
+        if (!isPersistent(object)) {
             throw new IllegalStateException(message != null ? message : "Object must be persistent");
         }
+    }
+
+    /**
+     * Utility method to ensure that a given object is <strong>not</strong> in a persistent state.
+     *
+     * @param object  The object to check the state of
+     * @param message Message to use for the exception, if object is persistent
+     * @see #assertPersistent(Object, String)
+     * @since 4.11.0
+     */
+    public static void assertNonPersistent(final Object object, final String message) {
+        if (isPersistent(object)) {
+            throw new IllegalStateException(message != null ? message : "Object must not be persistent");
+        }
+    }
+
+    /**
+     * Utility method to ensure that a given {@link Collection} is <strong>not</strong> in a persistent state.
+     *
+     * @param objects The {@link Collection} to check the state of
+     * @param message Message to use for the exception, if object is persistent
+     * @see #assertNonPersistent(Object, String)
+     * @since 4.11.0
+     */
+    public static void assertNonPersistentAll(final Collection<?> objects, final String message) {
+        if (objects == null || objects.isEmpty()) {
+            return;
+        }
+
+        objects.forEach(object -> assertNonPersistent(object, message));
+    }
+
+    private static boolean isPersistent(final Object object) {
+        final ObjectState objectState = JDOHelper.getObjectState(object);
+        return objectState == PERSISTENT_CLEAN
+                || objectState == PERSISTENT_DIRTY
+                || objectState == PERSISTENT_NEW
+                || objectState == PERSISTENT_NONTRANSACTIONAL_DIRTY
+                || objectState == HOLLOW_PERSISTENT_NONTRANSACTIONAL;
+    }
+
+    /**
+     * Evict a given object from the JDO L2 cache.
+     *
+     * @param qm     The {@link QueryManager} to use
+     * @param object The object to evict from the cache
+     * @since 4.11.0
+     */
+    public static void evictFromL2Cache(final QueryManager qm, final Object object) {
+        final PersistenceManagerFactory pmf = qm.getPersistenceManager().getPersistenceManagerFactory();
+        pmf.getDataStoreCache().evict(getDataNucleusJdoObjectId(object));
+    }
+
+    /**
+     * Evict a given {@link Collection} of objects from the JDO L2 cache.
+     *
+     * @param qm      The {@link QueryManager} to use
+     * @param objects The objects to evict from the cache
+     * @since 4.11.0
+     */
+    public static void evictFromL2Cache(final QueryManager qm, final Collection<?> objects) {
+        final PersistenceManagerFactory pmf = qm.getPersistenceManager().getPersistenceManagerFactory();
+        pmf.getDataStoreCache().evictAll(getDataNucleusJdoObjectIds(objects));
+    }
+
+    private static Collection<?> getDataNucleusJdoObjectIds(final Collection<?> objects) {
+        return objects.stream().map(PersistenceUtil::getDataNucleusJdoObjectId).toList();
+    }
+
+    /**
+     * {@link JDOHelper#getObjectId(Object)} and {@link PersistenceManager#getObjectId(Object)}
+     * return instances of {@link javax.jdo.identity.LongIdentity}, but the DataNucleus L2 cache is maintained
+     * with DataNucleus-specific {@link org.datanucleus.identity.LongId}s instead.
+     * <p>
+     * Calling {@link javax.jdo.datastore.DataStoreCache#evict(Object)} with {@link javax.jdo.identity.LongIdentity}
+     * is pretty much a no-op. The mismatch is undetectable because {@code evict} doesn't throw when a wrong identity
+     * type is passed either.
+     * <p>
+     * (╯°□°)╯︵ ┻━┻
+     *
+     * @param object The object to get the JDO object ID for
+     * @return A JDO object ID
+     */
+    private static Object getDataNucleusJdoObjectId(final Object object) {
+        if (!(object instanceof final Persistable persistable)) {
+            throw new IllegalArgumentException("Can't get JDO object ID from non-Persistable objects");
+        }
+
+        final Object objectId = persistable.dnGetObjectId();
+        if (objectId == null) {
+            throw new IllegalStateException("Object does not have a JDO object ID");
+        }
+
+        return objectId;
+    }
+
+    public static boolean isUniqueConstraintViolation(final Throwable throwable) {
+        // NB: DataNucleus doesn't map constraint violation exceptions,
+        //   so we have to depend on underlying JDBC driver's exception to
+        //   tell us what happened. Leaky abstraction FTW.
+        final Throwable rootCause = ExceptionUtils.getRootCause(throwable);
+
+        // H2 has a dedicated exception for this.
+        if (rootCause instanceof JdbcSQLIntegrityConstraintViolationException) {
+            return true;
+        }
+
+        // Other RDBMSes use the SQL state to communicate errors.
+        if (rootCause instanceof final SQLException se) {
+            return MysqlErrorNumbers.SQL_STATE_INTEGRITY_CONSTRAINT_VIOLATION.equals(se.getSQLState()) // MySQL
+                    || PSQLState.UNIQUE_VIOLATION.getState().equals(se.getSQLState()) // PostgreSQL
+                    || "23000".equals(se.getSQLState()); // SQL Server
+        }
+
+        return false;
     }
 
 }

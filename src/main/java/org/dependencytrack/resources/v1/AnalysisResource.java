@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.resources.v1;
 
@@ -68,18 +68,19 @@ public class AnalysisResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Retrieves an analysis trail",
-            response = Analysis.class
+            response = Analysis.class,
+            notes = "<p>Requires permission <strong>VIEW_VULNERABILITY</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
             @ApiResponse(code = 404, message = "The project, component, or vulnerability could not be found")
     })
     @PermissionRequired(Permissions.Constants.VIEW_VULNERABILITY)
-    public Response retrieveAnalysis(@ApiParam(value = "The UUID of the project")
+    public Response retrieveAnalysis(@ApiParam(value = "The UUID of the project", format = "uuid")
                                      @QueryParam("project") String projectUuid,
-                                     @ApiParam(value = "The UUID of the component", required = true)
+                                     @ApiParam(value = "The UUID of the component", format = "uuid", required = true)
                                      @QueryParam("component") String componentUuid,
-                                     @ApiParam(value = "The UUID of the vulnerability", required = true)
+                                     @ApiParam(value = "The UUID of the vulnerability", format = "uuid", required = true)
                                      @QueryParam("vulnerability") String vulnerabilityUuid) {
         failOnValidationError(
                 new ValidationTask(RegexSequence.Pattern.UUID, projectUuid, "Project is not a valid UUID", false), // this is optional
@@ -115,7 +116,8 @@ public class AnalysisResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Records an analysis decision",
-            response = Analysis.class
+            response = Analysis.class,
+            notes = "<p>Requires permission <strong>VULNERABILITY_ANALYSIS</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),

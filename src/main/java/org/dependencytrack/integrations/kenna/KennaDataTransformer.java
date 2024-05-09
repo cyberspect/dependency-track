@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.integrations.kenna;
 
@@ -73,7 +73,7 @@ public class KennaDataTransformer {
         final JSONArray vulns = new JSONArray();
         final List<Finding> findings = qm.getFindings(project);
         for (final Finding finding: findings) {
-            final Map analysis = finding.getAnalysis();
+            final Map<String, Object> analysis = finding.getAnalysis();
             final Object suppressed = finding.getAnalysis().get("isSuppressed");
             if (suppressed instanceof Boolean) {
                 final boolean isSuppressed = (Boolean)analysis.get("isSuppressed");

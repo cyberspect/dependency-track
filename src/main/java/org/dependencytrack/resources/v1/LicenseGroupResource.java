@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.resources.v1;
 
@@ -32,7 +32,9 @@ import org.apache.commons.lang3.StringUtils;
 import org.dependencytrack.auth.Permissions;
 import org.dependencytrack.model.License;
 import org.dependencytrack.model.LicenseGroup;
+import org.dependencytrack.model.validation.ValidUuid;
 import org.dependencytrack.persistence.QueryManager;
+import org.dependencytrack.resources.v1.openapi.PaginatedApi;
 
 import javax.validation.Validator;
 import javax.ws.rs.Consumes;
@@ -63,8 +65,10 @@ public class LicenseGroupResource extends AlpineResource {
             value = "Returns a list of all license groups",
             response = LicenseGroup.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of license groups")
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of license groups"),
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
+    @PaginatedApi
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized")
     })
@@ -81,7 +85,8 @@ public class LicenseGroupResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Returns a specific license group",
-            response = License.class
+            response = License.class,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -89,8 +94,8 @@ public class LicenseGroupResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.POLICY_MANAGEMENT)
     public Response getLicenseGroup(
-            @ApiParam(value = "The UUID of the license group to retrieve", required = true)
-            @PathParam("uuid") String uuid) {
+            @ApiParam(value = "The UUID of the license group to retrieve", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid) {
         try (QueryManager qm = new QueryManager()) {
             final LicenseGroup licenseGroup = qm.getObjectByUuid(LicenseGroup.class, uuid);
             if (licenseGroup != null) {
@@ -107,7 +112,8 @@ public class LicenseGroupResource extends AlpineResource {
     @ApiOperation(
             value = "Creates a new license group",
             response = LicenseGroup.class,
-            code = 201
+            code = 201,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -136,7 +142,8 @@ public class LicenseGroupResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Updates a license group",
-            response = LicenseGroup.class
+            response = LicenseGroup.class,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -166,7 +173,8 @@ public class LicenseGroupResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Deletes a license group",
-            code = 204
+            code = 204,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -174,8 +182,8 @@ public class LicenseGroupResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.POLICY_MANAGEMENT)
     public Response deleteLicenseGroup(
-            @ApiParam(value = "The UUID of the license group to delete", required = true)
-            @PathParam("uuid") String uuid) {
+            @ApiParam(value = "The UUID of the license group to delete", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid) {
         try (QueryManager qm = new QueryManager()) {
             final LicenseGroup licenseGroup = qm.getObjectByUuid(LicenseGroup.class, uuid);
             if (licenseGroup != null) {
@@ -193,7 +201,8 @@ public class LicenseGroupResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Adds the license to the specified license group.",
-            response = LicenseGroup.class
+            response = LicenseGroup.class,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The license group already has the specified license assigned"),
@@ -202,10 +211,10 @@ public class LicenseGroupResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.POLICY_MANAGEMENT)
     public Response addLicenseToLicenseGroup(
-            @ApiParam(value = "A valid license group", required = true)
-            @PathParam("uuid") String uuid,
-            @ApiParam(value = "A valid license", required = true)
-            @PathParam("licenseUuid") String licenseUuid) {
+            @ApiParam(value = "A valid license group", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid,
+            @ApiParam(value = "A valid license", format = "uuid", required = true)
+            @PathParam("licenseUuid") @ValidUuid String licenseUuid) {
         try (QueryManager qm = new QueryManager()) {
             LicenseGroup licenseGroup = qm.getObjectByUuid(LicenseGroup.class, uuid);
             if (licenseGroup == null) {
@@ -232,7 +241,8 @@ public class LicenseGroupResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Removes the license from the license group.",
-            response = LicenseGroup.class
+            response = LicenseGroup.class,
+            notes = "<p>Requires permission <strong>POLICY_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The license is not a member with the license group"),
@@ -241,10 +251,10 @@ public class LicenseGroupResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.POLICY_MANAGEMENT)
     public Response removeLicenseFromLicenseGroup(
-            @ApiParam(value = "A valid license group", required = true)
-            @PathParam("uuid") String uuid,
-            @ApiParam(value = "A valid license", required = true)
-            @PathParam("licenseUuid") String licenseUuid) {
+            @ApiParam(value = "A valid license group", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid,
+            @ApiParam(value = "A valid license", format = "uuid", required = true)
+            @PathParam("licenseUuid") @ValidUuid String licenseUuid) {
         try (QueryManager qm = new QueryManager()) {
             LicenseGroup licenseGroup = qm.getObjectByUuid(LicenseGroup.class, uuid);
             if (licenseGroup == null) {

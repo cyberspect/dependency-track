@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.resources.v1;
 
@@ -28,7 +28,8 @@ import io.swagger.annotations.ApiResponses;
 import io.swagger.annotations.Authorization;
 import io.swagger.annotations.ResponseHeader;
 import org.dependencytrack.model.Cwe;
-import org.dependencytrack.persistence.QueryManager;
+import org.dependencytrack.parser.common.resolver.CweResolver;
+import org.dependencytrack.resources.v1.openapi.PaginatedApi;
 
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
@@ -55,14 +56,13 @@ public class CweResource extends AlpineResource {
             responseContainer = "List",
             responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of CWEs")
     )
+    @PaginatedApi
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized")
     })
     public Response getCwes() {
-        try (QueryManager qm = new QueryManager(getAlpineRequest())) {
-            final PaginatedResult result = qm.getCwes();
-            return Response.ok(result.getObjects()).header(TOTAL_COUNT_HEADER, result.getTotal()).build();
-        }
+        final PaginatedResult cwes = CweResolver.getInstance().all(getAlpineRequest().getPagination());
+        return Response.ok(cwes.getObjects()).header(TOTAL_COUNT_HEADER, cwes.getTotal()).build();
     }
 
     @GET
@@ -79,13 +79,11 @@ public class CweResource extends AlpineResource {
     public Response getCwe(
             @ApiParam(value = "The CWE ID of the CWE to retrieve", required = true)
             @PathParam("cweId") int cweId) {
-        try (QueryManager qm = new QueryManager()) {
-            final Cwe cwe = qm.getCweById(cweId);
-            if (cwe != null) {
-                return Response.ok(cwe).build();
-            } else {
-                return Response.status(Response.Status.NOT_FOUND).entity("The CWE could not be found.").build();
-            }
+        final Cwe cwe = CweResolver.getInstance().lookup(cweId);
+        if (cwe != null) {
+            return Response.ok(cwe).build();
+        } else {
+            return Response.status(Response.Status.NOT_FOUND).entity("The CWE could not be found.").build();
         }
     }
 

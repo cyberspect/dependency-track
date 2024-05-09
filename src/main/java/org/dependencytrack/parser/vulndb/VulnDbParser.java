@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.parser.vulndb;
 
@@ -291,8 +291,8 @@ public class VulnDbParser {
                                 jso.optBigDecimal("score", (BigDecimal) null),
                                 StringUtils.trimToNull(jso.optString("privileges_required", (String) null)),
                                 StringUtils.trimToNull(jso.optString("user_interaction", (String) null)),
-                                StringUtils.trimToNull(jso.optString("cve_id", (String) null)),
                                 StringUtils.trimToNull(jso.optString("source", (String) null)),
+                                StringUtils.trimToNull(jso.optString("cve_id", (String) null)),
                                 StringUtils.trimToNull(jso.optString("confidentiality_impact", (String) null)),
                                 jso.optBigDecimal("calculated_cvss_base_score", (BigDecimal) null),
                                 StringUtils.trimToNull(jso.optString("generated_on", (String) null)),
@@ -305,7 +305,7 @@ public class VulnDbParser {
                 JSONArray nvdInfo = object.optJSONArray("nvd_additional_information");
                // List<NvdAdditionalInfo> nvdAdditionalInfos = new ArrayList<>();
                 NvdAdditionalInfo nvdAdditionalInfo = null;
-                if (nvdInfo != null) {
+                if (nvdInfo != null && nvdInfo.length() > 0) {
 //                    for (int j = 0; j < nvdInfo.length(); ++j) {
 //                        JSONObject jso = nvdInfo.getJSONObject(j);
 //                        NvdAdditionalInfo nvdAdditionalInfo = new NvdAdditionalInfo(StringUtils.trimToNull(jso.optString("summary", (String) null)),

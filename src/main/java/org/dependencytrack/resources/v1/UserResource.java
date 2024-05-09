@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.resources.v1;
 
@@ -26,6 +26,8 @@ import alpine.model.OidcUser;
 import alpine.model.Permission;
 import alpine.model.Team;
 import alpine.model.UserPrincipal;
+import alpine.notification.Notification;
+import alpine.notification.NotificationLevel;
 import alpine.security.crypto.KeyManager;
 import alpine.server.auth.AlpineAuthenticationException;
 import alpine.server.auth.AuthenticationNotRequired;
@@ -45,6 +47,9 @@ import io.swagger.annotations.ResponseHeader;
 import org.apache.commons.lang3.StringUtils;
 import org.dependencytrack.auth.Permissions;
 import org.dependencytrack.model.IdentifiableObject;
+import org.dependencytrack.notification.NotificationConstants;
+import org.dependencytrack.notification.NotificationGroup;
+import org.dependencytrack.notification.NotificationScope;
 import org.dependencytrack.persistence.QueryManager;
 import org.owasp.security.logging.SecurityMarkers;
 
@@ -222,7 +227,8 @@ public class UserResource extends AlpineResource {
             value = "Returns a list of all managed users",
             response = ManagedUser.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of managed users")
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of managed users"),
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized")
@@ -243,7 +249,8 @@ public class UserResource extends AlpineResource {
             value = "Returns a list of all LDAP users",
             response = LdapUser.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of LDAP users")
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of LDAP users"),
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized")
@@ -267,7 +274,8 @@ public class UserResource extends AlpineResource {
             value = "Returns a list of all OIDC users",
             response = OidcUser.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of OIDC users")
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of OIDC users"),
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized")
@@ -366,7 +374,8 @@ public class UserResource extends AlpineResource {
     @ApiOperation(
             value = "Creates a new user that references an existing LDAP object.",
             response = LdapUser.class,
-            code = 201
+            code = 201,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 400, message = "Username cannot be null or blank."),
@@ -383,6 +392,13 @@ public class UserResource extends AlpineResource {
             if (user == null) {
                 user = qm.createLdapUser(jsonUser.getUsername());
                 super.logSecurityEvent(LOGGER, SecurityMarkers.SECURITY_AUDIT, "LDAP user created: " + jsonUser.getUsername());
+                Notification.dispatch(new Notification()
+                        .scope(NotificationScope.SYSTEM)
+                        .group(NotificationGroup.USER_CREATED)
+                        .title(NotificationConstants.Title.USER_CREATED)
+                        .level(NotificationLevel.INFORMATIONAL)
+                        .content("LDAP user created")
+                        .subject(user));
                 return Response.status(Response.Status.CREATED).entity(user).build();
             } else {
                 return Response.status(Response.Status.CONFLICT).entity("A user with the same username already exists. Cannot create new user.").build();
@@ -396,7 +412,8 @@ public class UserResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Deletes a user.",
-            code = 204
+            code = 204,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -407,8 +424,16 @@ public class UserResource extends AlpineResource {
         try (QueryManager qm = new QueryManager()) {
             final LdapUser user = qm.getLdapUser(jsonUser.getUsername());
             if (user != null) {
+                final LdapUser detachedUser = qm.getPersistenceManager().detachCopy(user);
                 qm.delete(user);
-                super.logSecurityEvent(LOGGER, SecurityMarkers.SECURITY_AUDIT, "LDAP user deleted: " + jsonUser.getUsername());
+                super.logSecurityEvent(LOGGER, SecurityMarkers.SECURITY_AUDIT, "LDAP user deleted: " + detachedUser);
+                Notification.dispatch(new Notification()
+                        .scope(NotificationScope.SYSTEM)
+                        .group(NotificationGroup.USER_DELETED)
+                        .title(NotificationConstants.Title.USER_DELETED)
+                        .level(NotificationLevel.INFORMATIONAL)
+                        .content("LDAP user deleted")
+                        .subject(detachedUser));
                 return Response.status(Response.Status.NO_CONTENT).build();
             } else {
                 return Response.status(Response.Status.NOT_FOUND).entity("The user could not be found.").build();
@@ -423,7 +448,8 @@ public class UserResource extends AlpineResource {
     @ApiOperation(
             value = "Creates a new user.",
             response = ManagedUser.class,
-            code = 201
+            code = 201,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 400, message = "Missing required field"),
@@ -456,6 +482,13 @@ public class UserResource extends AlpineResource {
                         String.valueOf(PasswordService.createHash(jsonUser.getNewPassword().toCharArray())),
                         jsonUser.isForcePasswordChange(), jsonUser.isNonExpiryPassword(), jsonUser.isSuspended());
                 super.logSecurityEvent(LOGGER, SecurityMarkers.SECURITY_AUDIT, "Managed user created: " + jsonUser.getUsername());
+                Notification.dispatch(new Notification()
+                        .scope(NotificationScope.SYSTEM)
+                        .group(NotificationGroup.USER_CREATED)
+                        .title(NotificationConstants.Title.USER_CREATED)
+                        .level(NotificationLevel.INFORMATIONAL)
+                        .content("Managed user created")
+                        .subject(user));
                 return Response.status(Response.Status.CREATED).entity(user).build();
             } else {
                 return Response.status(Response.Status.CONFLICT).entity("A user with the same username already exists. Cannot create new user.").build();
@@ -469,7 +502,8 @@ public class UserResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Updates a managed user.",
-            response = ManagedUser.class
+            response = ManagedUser.class,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 400, message = "Missing required field"),
@@ -511,7 +545,8 @@ public class UserResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Deletes a user.",
-            code = 204
+            code = 204,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -522,8 +557,16 @@ public class UserResource extends AlpineResource {
         try (QueryManager qm = new QueryManager()) {
             final ManagedUser user = qm.getManagedUser(jsonUser.getUsername());
             if (user != null) {
+                final ManagedUser detachedUser = qm.getPersistenceManager().detachCopy(user);
                 qm.delete(user);
-                super.logSecurityEvent(LOGGER, SecurityMarkers.SECURITY_AUDIT, "Managed user deleted: " + jsonUser.getUsername());
+                super.logSecurityEvent(LOGGER, SecurityMarkers.SECURITY_AUDIT, "Managed user deleted: " +detachedUser);
+                Notification.dispatch(new Notification()
+                        .scope(NotificationScope.SYSTEM)
+                        .group(NotificationGroup.USER_DELETED)
+                        .title(NotificationConstants.Title.USER_DELETED)
+                        .level(NotificationLevel.INFORMATIONAL)
+                        .content("Managed user deleted")
+                        .subject(detachedUser));
                 return Response.status(Response.Status.NO_CONTENT).build();
             } else {
                 return Response.status(Response.Status.NOT_FOUND).entity("The user could not be found.").build();
@@ -538,7 +581,8 @@ public class UserResource extends AlpineResource {
     @ApiOperation(
             value = "Creates a new user that references an existing OpenID Connect user.",
             response = OidcUser.class,
-            code = 201
+            code = 201,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 400, message = "Username cannot be null or blank."),
@@ -555,6 +599,13 @@ public class UserResource extends AlpineResource {
             if (user == null) {
                 user = qm.createOidcUser(jsonUser.getUsername());
                 super.logSecurityEvent(LOGGER, SecurityMarkers.SECURITY_AUDIT, "OpenID Connect user created: " + jsonUser.getUsername());
+                Notification.dispatch(new Notification()
+                        .scope(NotificationScope.SYSTEM)
+                        .group(NotificationGroup.USER_CREATED)
+                        .title(NotificationConstants.Title.USER_CREATED)
+                        .level(NotificationLevel.INFORMATIONAL)
+                        .content("OpenID Connect user created")
+                        .subject(user));
                 return Response.status(Response.Status.CREATED).entity(user).build();
             } else {
                 return Response.status(Response.Status.CONFLICT).entity("A user with the same username already exists. Cannot create new user.").build();
@@ -568,7 +619,8 @@ public class UserResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Deletes an OpenID Connect user.",
-            code = 204
+            code = 204,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -579,8 +631,16 @@ public class UserResource extends AlpineResource {
         try (QueryManager qm = new QueryManager()) {
             final OidcUser user = qm.getOidcUser(jsonUser.getUsername());
             if (user != null) {
+                final OidcUser detachedUser = qm.getPersistenceManager().detachCopy(user);
                 qm.delete(user);
-                super.logSecurityEvent(LOGGER, SecurityMarkers.SECURITY_AUDIT, "OpenID Connect user deleted: " + jsonUser.getUsername());
+                super.logSecurityEvent(LOGGER, SecurityMarkers.SECURITY_AUDIT, "OpenID Connect user deleted: " + detachedUser);
+                Notification.dispatch(new Notification()
+                        .scope(NotificationScope.SYSTEM)
+                        .group(NotificationGroup.USER_DELETED)
+                        .title(NotificationConstants.Title.USER_DELETED)
+                        .level(NotificationLevel.INFORMATIONAL)
+                        .content("OpenID Connect user deleted")
+                        .subject(detachedUser));
                 return Response.status(Response.Status.NO_CONTENT).build();
             } else {
                 return Response.status(Response.Status.NOT_FOUND).entity("The user could not be found.").build();
@@ -594,7 +654,8 @@ public class UserResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Adds the username to the specified team.",
-            response = UserPrincipal.class
+            response = UserPrincipal.class,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The user is already a member of the specified team"),
@@ -633,7 +694,8 @@ public class UserResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Removes the username from the specified team.",
-            response = UserPrincipal.class
+            response = UserPrincipal.class,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The user was not a member of the specified team"),

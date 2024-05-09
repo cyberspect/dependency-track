@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.upgrade;
 
@@ -38,6 +38,7 @@ class UpgradeItems {
         UPGRADE_ITEMS.add(org.dependencytrack.upgrade.v480.v480Updater.class);
         UPGRADE_ITEMS.add(org.dependencytrack.upgrade.v490.v490Updater.class);
         UPGRADE_ITEMS.add(org.dependencytrack.upgrade.v4100.v4100Updater.class);
+        UPGRADE_ITEMS.add(org.dependencytrack.upgrade.v4110.v4110Updater.class);
     }
 
     static List<Class<? extends UpgradeItem>> getUpgradeItems() {

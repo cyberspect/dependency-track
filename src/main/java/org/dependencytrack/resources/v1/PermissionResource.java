@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.resources.v1;
 
@@ -31,6 +31,7 @@ import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
 import io.swagger.annotations.Authorization;
 import org.dependencytrack.auth.Permissions;
+import org.dependencytrack.model.validation.ValidUuid;
 import org.dependencytrack.persistence.QueryManager;
 import org.owasp.security.logging.SecurityMarkers;
 
@@ -62,7 +63,8 @@ public class PermissionResource extends AlpineResource {
     @ApiOperation(
             value = "Returns a list of all permissions",
             response = alpine.model.Permission.class,
-            responseContainer = "List"
+            responseContainer = "List",
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized")
@@ -81,7 +83,8 @@ public class PermissionResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Adds the permission to the specified username.",
-            response = UserPrincipal.class
+            response = UserPrincipal.class,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The user already has the specified permission assigned"),
@@ -121,7 +124,8 @@ public class PermissionResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Removes the permission from the user.",
-            response = UserPrincipal.class
+            response = UserPrincipal.class,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The user already has the specified permission assigned"),
@@ -161,8 +165,8 @@ public class PermissionResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Adds the permission to the specified team.",
-            notes = "Requires 'manage users' permission.",
-            response = Team.class
+            response = Team.class,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The team already has the specified permission assigned"),
@@ -171,8 +175,8 @@ public class PermissionResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.ACCESS_MANAGEMENT)
     public Response addPermissionToTeam(
-            @ApiParam(value = "A valid team uuid", required = true)
-            @PathParam("uuid") String uuid,
+            @ApiParam(value = "A valid team uuid", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid,
             @ApiParam(value = "A valid permission", required = true)
             @PathParam("permission") String permissionName) {
         try (QueryManager qm = new QueryManager()) {
@@ -202,7 +206,8 @@ public class PermissionResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Removes the permission from the team.",
-            response = Team.class
+            response = Team.class,
+            notes = "<p>Requires permission <strong>ACCESS_MANAGEMENT</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The team already has the specified permission assigned"),
@@ -211,8 +216,8 @@ public class PermissionResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.ACCESS_MANAGEMENT)
     public Response removePermissionFromTeam(
-            @ApiParam(value = "A valid team uuid", required = true)
-            @PathParam("uuid") String uuid,
+            @ApiParam(value = "A valid team uuid", format = "uuid", required = true)
+            @PathParam("uuid") @ValidUuid String uuid,
             @ApiParam(value = "A valid permission", required = true)
             @PathParam("permission") String permissionName) {
         try (QueryManager qm = new QueryManager()) {

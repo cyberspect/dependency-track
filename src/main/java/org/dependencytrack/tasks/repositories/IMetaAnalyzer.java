@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.tasks.repositories;
 
@@ -90,6 +90,11 @@ public interface IMetaAnalyzer {
                 if (analyzer.isApplicable(component)) {
                     return analyzer;
                 }
+            } else if (PackageURL.StandardTypes.CARGO.equals(component.getPurl().getType())) {
+                IMetaAnalyzer analyzer = new CargoMetaAnalyzer();
+                if (analyzer.isApplicable(component)) {
+                    return analyzer;
+                }
             } else if ("cpan".equals(component.getPurl().getType())) {
                 IMetaAnalyzer analyzer = new CpanMetaAnalyzer();
                 if (analyzer.isApplicable(component)) {
@@ -127,6 +132,16 @@ public interface IMetaAnalyzer {
                 }
             } else if (PackageURL.StandardTypes.GITHUB.equals(component.getPurl().getType())) {
                 IMetaAnalyzer analyzer = new GithubMetaAnalyzer();
+                if (analyzer.isApplicable(component)) {
+                    return analyzer;
+                }
+            } else if ("hackage".equals(component.getPurl().getType())) {
+                IMetaAnalyzer analyzer = new HackageMetaAnalyzer();
+                if (analyzer.isApplicable(component)) {
+                    return analyzer;
+                }
+            } else if ("nixpkgs".equals(component.getPurl().getType())) {
+                IMetaAnalyzer analyzer = new NixpkgsMetaAnalyzer();
                 if (analyzer.isApplicable(component)) {
                     return analyzer;
                 }

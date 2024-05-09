@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.resources.v1;
 
@@ -38,6 +38,7 @@ import org.dependencytrack.model.Component;
 import org.dependencytrack.model.PolicyViolation;
 import org.dependencytrack.model.ViolationAnalysis;
 import org.dependencytrack.model.ViolationAnalysisState;
+import org.dependencytrack.model.validation.ValidUuid;
 import org.dependencytrack.persistence.QueryManager;
 import org.dependencytrack.resources.v1.vo.ViolationAnalysisRequest;
 import org.dependencytrack.util.NotificationUtil;
@@ -66,17 +67,18 @@ public class ViolationAnalysisResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Retrieves a violation analysis trail",
-            response = ViolationAnalysis.class
+            response = ViolationAnalysis.class,
+            notes = "<p>Requires permission <strong>VIEW_POLICY_VIOLATION</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
             @ApiResponse(code = 404, message = "The component or policy violation could not be found")
     })
     @PermissionRequired(Permissions.Constants.VIEW_POLICY_VIOLATION)
-    public Response retrieveAnalysis(@ApiParam(value = "The UUID of the component", required = true)
-                                     @QueryParam("component") String componentUuid,
-                                     @ApiParam(value = "The UUID of the policy violation", required = true)
-                                     @QueryParam("policyViolation") String violationUuid) {
+    public Response retrieveAnalysis(@ApiParam(value = "The UUID of the component", format = "uuid", required = true)
+                                     @QueryParam("component") @ValidUuid String componentUuid,
+                                     @ApiParam(value = "The UUID of the policy violation", format = "uuid", required = true)
+                                     @QueryParam("policyViolation") @ValidUuid String violationUuid) {
         failOnValidationError(
                 new ValidationTask(RegexSequence.Pattern.UUID, componentUuid, "Component is not a valid UUID"),
                 new ValidationTask(RegexSequence.Pattern.UUID, violationUuid, "Policy violation is not a valid UUID")
@@ -100,7 +102,8 @@ public class ViolationAnalysisResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Records a violation analysis decision",
-            response = ViolationAnalysis.class
+            response = ViolationAnalysis.class,
+            notes = "<p>Requires permission <strong>POLICY_VIOLATION_ANALYSIS</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
