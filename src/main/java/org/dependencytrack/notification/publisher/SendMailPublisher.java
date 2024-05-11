@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.notification.publisher;
 
@@ -24,12 +24,12 @@ import alpine.model.ManagedUser;
 import alpine.model.OidcUser;
 import alpine.model.Team;
 import alpine.notification.Notification;
-import alpine.security.crypto.DataEncryption;
 import alpine.server.mail.SendMail;
 import alpine.server.mail.SendMailException;
 import io.pebbletemplates.pebble.PebbleEngine;
 import io.pebbletemplates.pebble.template.PebbleTemplate;
 import org.dependencytrack.persistence.QueryManager;
+import org.dependencytrack.util.DebugDataEncryption;
 
 import javax.json.JsonObject;
 import javax.json.JsonString;
@@ -42,6 +42,7 @@ import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
+import static org.dependencytrack.model.ConfigPropertyConstants.EMAIL_PREFIX;
 import static org.dependencytrack.model.ConfigPropertyConstants.EMAIL_SMTP_ENABLED;
 import static org.dependencytrack.model.ConfigPropertyConstants.EMAIL_SMTP_FROM_ADDR;
 import static org.dependencytrack.model.ConfigPropertyConstants.EMAIL_SMTP_PASSWORD;
@@ -103,6 +104,7 @@ public class SendMailPublisher implements Publisher {
         final String encryptedSmtpPassword;
         final boolean smtpSslTls;
         final boolean smtpTrustCert;
+        String emailSubjectPrefix;
 
         try (QueryManager qm = new QueryManager()) {
             smtpEnabled = qm.isEnabled(EMAIL_SMTP_ENABLED);
@@ -112,6 +114,8 @@ public class SendMailPublisher implements Publisher {
             }
 
             smtpFrom = qm.getConfigProperty(EMAIL_SMTP_FROM_ADDR.getGroupName(), EMAIL_SMTP_FROM_ADDR.getPropertyName()).getPropertyValue();
+            emailSubjectPrefix = qm.getConfigProperty(EMAIL_PREFIX.getGroupName(), EMAIL_PREFIX.getPropertyName()).getPropertyValue();
+            emailSubjectPrefix = emailSubjectPrefix == null ? " " : emailSubjectPrefix;
             smtpHostname = qm.getConfigProperty(EMAIL_SMTP_SERVER_HOSTNAME.getGroupName(), EMAIL_SMTP_SERVER_HOSTNAME.getPropertyName()).getPropertyValue();
             smtpPort = Integer.parseInt(qm.getConfigProperty(EMAIL_SMTP_SERVER_PORT.getGroupName(), EMAIL_SMTP_SERVER_PORT.getPropertyName()).getPropertyValue());
             smtpUser = qm.getConfigProperty(EMAIL_SMTP_USERNAME.getGroupName(), EMAIL_SMTP_USERNAME.getPropertyName()).getPropertyValue();
@@ -126,7 +130,7 @@ public class SendMailPublisher implements Publisher {
         final boolean smtpAuth = (smtpUser != null && encryptedSmtpPassword != null);
         final String decryptedSmtpPassword;
         try {
-            decryptedSmtpPassword = (encryptedSmtpPassword != null) ? DataEncryption.decryptAsString(encryptedSmtpPassword) : null;
+            decryptedSmtpPassword = (encryptedSmtpPassword != null) ? DebugDataEncryption.decryptAsString(encryptedSmtpPassword) : null;
         } catch (Exception e) {
             LOGGER.error("Failed to decrypt SMTP password (%s)".formatted(ctx), e);
             return;
@@ -136,7 +140,7 @@ public class SendMailPublisher implements Publisher {
             final SendMail sendMail = new SendMail()
                     .from(smtpFrom)
                     .to(destinations)
-                    .subject("[Dependency-Track] " + notification.getTitle())
+                    .subject(emailSubjectPrefix + " " + notification.getTitle())
                     .body(content)
                     .bodyMimeType(mimeType)
                     .host(smtpHostname)

@@ -14,13 +14,14 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.persistence;
 
 import alpine.common.logging.Logger;
 import alpine.event.framework.Event;
 import alpine.model.ApiKey;
+import alpine.model.IConfigProperty;
 import alpine.model.Team;
 import alpine.model.UserPrincipal;
 import alpine.persistence.PaginatedResult;
@@ -31,6 +32,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.dependencytrack.event.IndexEvent;
 import org.dependencytrack.model.Component;
 import org.dependencytrack.model.ComponentIdentity;
+import org.dependencytrack.model.ComponentProperty;
 import org.dependencytrack.model.ConfigPropertyConstants;
 import org.dependencytrack.model.Project;
 import org.dependencytrack.model.RepositoryMetaComponent;
@@ -49,8 +51,12 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import static org.dependencytrack.util.PersistenceUtil.assertNonPersistent;
+import static org.dependencytrack.util.PersistenceUtil.assertPersistent;
 
 final class ComponentQueryManager extends QueryManager implements IQueryManager {
 
@@ -469,6 +475,55 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
     }
 
     /**
+     * Returns a component by matching its identity information.
+     * <p>
+     * Note that this method employs a stricter matching logic than {@link #matchSingleIdentity(Project, ComponentIdentity)}
+     * and {@link #matchIdentity(ComponentIdentity)}. For example, if {@code purl} of the given {@link ComponentIdentity}
+     * is {@code null}, this method will use a query that explicitly checks for the {@code purl} column to be {@code null}.
+     * Whereas other methods will simply not include {@code purl} in the query in such cases.
+     *
+     * @param project the Project the component is a dependency of
+     * @param cid     the identity values of the component
+     * @return a Component object, or null if not found
+     * @since 4.11.0
+     */
+    public Component matchSingleIdentityExact(final Project project, final ComponentIdentity cid) {
+        final Pair<String, Map<String, Object>> queryFilterParamsPair = buildExactComponentIdentityQuery(project, cid);
+        final Query<Component> query = pm.newQuery(Component.class, queryFilterParamsPair.getKey());
+        query.setNamedParameters(queryFilterParamsPair.getRight());
+        try {
+            return query.executeUnique();
+        } finally {
+            query.closeAll();
+        }
+    }
+
+    /**
+     * Returns the first component matching a given {@link ComponentIdentity} in a {@link Project}.
+     *
+     * @param project the Project the component is a dependency of
+     * @param cid     the identity values of the component
+     * @return a Component object, or null if not found
+     * @since 4.11.0
+     */
+    public Component matchFirstIdentityExact(final Project project, final ComponentIdentity cid) {
+        final Pair<String, Map<String, Object>> queryFilterParamsPair = buildExactComponentIdentityQuery(project, cid);
+        final Query<Component> query = pm.newQuery(Component.class, queryFilterParamsPair.getKey());
+        query.setNamedParameters(queryFilterParamsPair.getRight());
+        query.setRange(0, 1);
+        try {
+            final List<Component> result = query.executeList();
+            if (result.isEmpty()) {
+                return null;
+            }
+
+            return result.get(0);
+        } finally {
+            query.closeAll();
+        }
+    }
+
+    /**
      * Returns a list of components by matching its identity information.
      * @param project the Project the component is a dependency of
      * @param cid the identity values of the component
@@ -556,6 +611,55 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
         return Pair.of(filter, params);
     }
 
+    private static Pair<String, Map<String, Object>> buildExactComponentIdentityQuery(final Project project, final ComponentIdentity cid) {
+        var filterParts = new ArrayList<String>();
+        final var params = new HashMap<String, Object>();
+
+        if (cid.getPurl() != null) {
+            filterParts.add("(purl != null && purl == :purl)");
+            params.put("purl", cid.getPurl().canonicalize());
+        } else {
+            filterParts.add("purl == null");
+        }
+
+        if (cid.getCpe() != null) {
+            filterParts.add("(cpe != null && cpe == :cpe)");
+            params.put("cpe", cid.getCpe());
+        } else {
+            filterParts.add("cpe == null");
+        }
+
+        if (cid.getSwidTagId() != null) {
+            filterParts.add("(swidTagId != null && swidTagId == :swidTagId)");
+            params.put("swidTagId", cid.getSwidTagId());
+        } else {
+            filterParts.add("swidTagId == null");
+        }
+
+        var coordinatesFilter = "(";
+        if (cid.getGroup() != null) {
+            coordinatesFilter += "group == :group";
+            params.put("group", cid.getGroup());
+        } else {
+            coordinatesFilter += "group == null";
+        }
+        coordinatesFilter += " && name == :name";
+        params.put("name", cid.getName());
+        if (cid.getVersion() != null) {
+            coordinatesFilter += " && version == :version";
+            params.put("version", cid.getVersion());
+        } else {
+            coordinatesFilter += " && version == null";
+        }
+        coordinatesFilter += ")";
+        filterParts.add(coordinatesFilter);
+
+        final var filter = "project == :project && (" + String.join(" && ", filterParts) + ")";
+        params.put("project", project);
+
+        return Pair.of(filter, params);
+    }
+
     /**
      * Intelligently adds dependencies for components that are not already a dependency
      * of the specified project and removes the dependency relationship for components
@@ -630,28 +734,17 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
         }
     }
 
-    public Map<String, Component> getDependencyGraphForComponent(Project project, Component component) {
+    public Map<String, Component> getDependencyGraphForComponents(Project project, List<Component> components) {
         Map<String, Component> dependencyGraph = new HashMap<>();
         if (project.getDirectDependencies() == null || project.getDirectDependencies().isBlank()) {
             return dependencyGraph;
         }
-        String queryUuid = ".*" + component.getUuid().toString() + ".*";
-        final Query<Component> query = pm.newQuery(Component.class, "directDependencies.matches(:queryUuid) && project == :project");
-        List<Component> components = (List<Component>) query.executeWithArray(queryUuid, project);
-        for (Component parentNodeComponent : components) {
-            parentNodeComponent.setExpandDependencyGraph(true);
-            if (dependencyGraph.containsKey(parentNodeComponent.getUuid().toString())) {
-                parentNodeComponent.getDependencyGraph().add(component.getUuid().toString());
-            } else {
-                dependencyGraph.put(parentNodeComponent.getUuid().toString(), parentNodeComponent);
-                Set<String> set = new HashSet<>();
-                set.add(component.getUuid().toString());
-                parentNodeComponent.setDependencyGraph(set);
-            }
-            getParentDependenciesOfComponent(project, parentNodeComponent, dependencyGraph, component);
-        }
-        if (!dependencyGraph.isEmpty() || project.getDirectDependencies().contains(component.getUuid().toString())){
+
+        for(Component component : components) {
             dependencyGraph.put(component.getUuid().toString(), component);
+            getParentDependenciesOfComponent(project, component, dependencyGraph);
+        }
+        if (!dependencyGraph.isEmpty()){
             getRootDependencies(dependencyGraph, project);
             getDirectDependenciesForPathDependencies(dependencyGraph);
         }
@@ -693,24 +786,19 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
         return List.copyOf(query.executeResultList(DependencyGraphResponse.class));
     }
 
-    private void getParentDependenciesOfComponent(Project project, Component parentNode, Map<String, Component> dependencyGraph, Component searchedComponent) {
-        String queryUuid = ".*" + parentNode.getUuid().toString() + ".*";
+    private void getParentDependenciesOfComponent(Project project, Component childComponent, Map<String, Component> dependencyGraph) {
+        String queryUuid = ".*" + childComponent.getUuid().toString() + ".*";
         final Query<Component> query = pm.newQuery(Component.class, "directDependencies.matches(:queryUuid) && project == :project");
-        List<Component> components = (List<Component>) query.executeWithArray(queryUuid, project);
-        for (Component component : components) {
-            if (component.getUuid() != searchedComponent.getUuid()) {
-                component.setExpandDependencyGraph(true);
-                if (dependencyGraph.containsKey(component.getUuid().toString())) {
-                    if (component.getDependencyGraph().add(component.getUuid().toString())) {
-                        getParentDependenciesOfComponent(project, component, dependencyGraph, searchedComponent);
-                    }
-                } else {
-                    dependencyGraph.put(component.getUuid().toString(), component);
-                    Set<String> set = new HashSet<>();
-                    set.add(component.getUuid().toString());
-                    component.setDependencyGraph(set);
-                    getParentDependenciesOfComponent(project, component, dependencyGraph, searchedComponent);
-                }
+        List<Component> parentComponents = (List<Component>) query.executeWithArray(queryUuid, project);
+        for (Component parentComponent : parentComponents) {
+            parentComponent.setExpandDependencyGraph(true);
+            if(parentComponent.getDependencyGraph() == null) {
+                parentComponent.setDependencyGraph(new HashSet<>());
+            }
+            parentComponent.getDependencyGraph().add(childComponent.getUuid().toString());
+            if (!dependencyGraph.containsKey(parentComponent.getUuid().toString())) {
+                dependencyGraph.put(parentComponent.getUuid().toString(), parentComponent);
+                getParentDependenciesOfComponent(project, parentComponent, dependencyGraph);
             }
         }
     }
@@ -718,9 +806,10 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
     private void getRootDependencies(Map<String, Component> dependencyGraph, Project project) {
         JsonArray directDependencies = Json.createReader(new StringReader(project.getDirectDependencies())).readArray();
         for (JsonValue directDependency : directDependencies) {
-            if (!dependencyGraph.containsKey(directDependency.asJsonObject().getString("uuid"))) {
-                Component component = this.getObjectByUuid(Component.class, directDependency.asJsonObject().getString("uuid"));
-                dependencyGraph.put(component.getUuid().toString(), component);
+            String uuid = directDependency.asJsonObject().getString("uuid");
+            if (!dependencyGraph.containsKey(uuid)) {
+                Component component = this.getObjectByUuid(Component.class, uuid);
+                dependencyGraph.put(uuid, component);
             }
         }
         getDirectDependenciesForPathDependencies(dependencyGraph);
@@ -735,16 +824,122 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
                     if (component.getDependencyGraph() == null) {
                         component.setDependencyGraph(new HashSet<>());
                     }
-                    if (!dependencyGraph.containsKey(directDependency.asJsonObject().getString("uuid")) && !addToDependencyGraph.containsKey(directDependency.asJsonObject().getString("uuid"))) {
-                        Component childNode = this.getObjectByUuid(Component.class, directDependency.asJsonObject().getString("uuid"));
+                    String uuid = directDependency.asJsonObject().getString("uuid");
+                    if (!dependencyGraph.containsKey(uuid) && !addToDependencyGraph.containsKey(uuid)) {
+                        Component childNode = this.getObjectByUuid(Component.class, uuid);
                         addToDependencyGraph.put(childNode.getUuid().toString(), childNode);
                         component.getDependencyGraph().add(childNode.getUuid().toString());
                     } else {
-                        component.getDependencyGraph().add(directDependency.asJsonObject().getString("uuid"));
+                        component.getDependencyGraph().add(uuid);
                     }
                 }
             }
         }
         dependencyGraph.putAll(addToDependencyGraph);
     }
+
+    @Override
+    public List<ComponentProperty> getComponentProperties(final Component component, final String groupName, final String propertyName) {
+        final Query<ComponentProperty> query = pm.newQuery(ComponentProperty.class);
+        query.setFilter("component == :component && groupName == :groupName && propertyName == :propertyName");
+        query.setParameters(component, groupName, propertyName);
+        try {
+            return List.copyOf(query.executeList());
+        } finally {
+            query.closeAll();
+        }
+    }
+
+    @Override
+    public List<ComponentProperty> getComponentProperties(final Component component) {
+        final Query<ComponentProperty> query = pm.newQuery(ComponentProperty.class);
+        query.setFilter("component == :component");
+        query.setParameters(component);
+        query.setOrdering("groupName ASC, propertyName ASC, id ASC");
+        try {
+            return List.copyOf(query.executeList());
+        } finally {
+            query.closeAll();
+        }
+    }
+
+    @Override
+    public ComponentProperty createComponentProperty(final Component component,
+                                                     final String groupName,
+                                                     final String propertyName,
+                                                     final String propertyValue,
+                                                     final IConfigProperty.PropertyType propertyType,
+                                                     final String description) {
+        final ComponentProperty property = new ComponentProperty();
+        property.setComponent(component);
+        property.setGroupName(groupName);
+        property.setPropertyName(propertyName);
+        property.setPropertyValue(propertyValue);
+        property.setPropertyType(propertyType);
+        property.setDescription(description);
+        return persist(property);
+    }
+
+    @Override
+    public long deleteComponentPropertyByUuid(final Component component, final UUID uuid) {
+        final Query<ComponentProperty> query = pm.newQuery(ComponentProperty.class);
+        query.setFilter("component == :component && uuid == :uuid");
+        try {
+            return query.deletePersistentAll(component, uuid);
+        } finally {
+            query.closeAll();
+        }
+    }
+
+    public void synchronizeComponentProperties(final Component component, final List<ComponentProperty> properties) {
+        assertPersistent(component, "component must be persistent");
+
+        if (properties == null || properties.isEmpty()) {
+            // TODO: We currently remove all existing properties that are no longer included in the BOM.
+            //   This is to stay consistent with the BOM being the source of truth. However, this may feel
+            //   counter-intuitive to some users, who might expect their manual changes to persist.
+            //   If we want to support that, we need a way to track which properties were added and / or
+            //   modified manually.
+            if (component.getProperties() != null) {
+                pm.deletePersistentAll(component.getProperties());
+            }
+
+            return;
+        }
+
+        properties.forEach(property -> assertNonPersistent(property, "property must not be persistent"));
+
+        if (component.getProperties() == null || component.getProperties().isEmpty()) {
+            for (final ComponentProperty property : properties) {
+                property.setComponent(component);
+                pm.makePersistent(property);
+            }
+
+            return;
+        }
+
+        // Group properties by group, name, and value. Because CycloneDX supports duplicate
+        // property names, uniqueness can only be determined by also considering the value.
+        final var existingPropertiesByIdentity = component.getProperties().stream()
+                .collect(Collectors.toMap(ComponentProperty.Identity::new, Function.identity()));
+        final var incomingPropertiesByIdentity = properties.stream()
+                .collect(Collectors.toMap(ComponentProperty.Identity::new, Function.identity()));
+
+        final var propertyIdentities = new HashSet<ComponentProperty.Identity>();
+        propertyIdentities.addAll(existingPropertiesByIdentity.keySet());
+        propertyIdentities.addAll(incomingPropertiesByIdentity.keySet());
+
+        for (final ComponentProperty.Identity identity : propertyIdentities) {
+            final ComponentProperty existingProperty = existingPropertiesByIdentity.get(identity);
+            final ComponentProperty incomingProperty = incomingPropertiesByIdentity.get(identity);
+
+            if (existingProperty == null) {
+                incomingProperty.setComponent(component);
+                pm.makePersistent(incomingProperty);
+            } else if (incomingProperty == null) {
+                pm.deletePersistent(existingProperty);
+            }
+        }
+    }
+
 }

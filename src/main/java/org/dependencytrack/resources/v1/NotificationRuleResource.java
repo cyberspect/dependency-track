@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.resources.v1;
 
@@ -35,9 +35,11 @@ import org.dependencytrack.auth.Permissions;
 import org.dependencytrack.model.NotificationPublisher;
 import org.dependencytrack.model.NotificationRule;
 import org.dependencytrack.model.Project;
+import org.dependencytrack.model.validation.ValidUuid;
 import org.dependencytrack.notification.NotificationScope;
 import org.dependencytrack.notification.publisher.SendMailPublisher;
 import org.dependencytrack.persistence.QueryManager;
+import org.dependencytrack.resources.v1.openapi.PaginatedApi;
 
 import javax.validation.Validator;
 import javax.ws.rs.Consumes;
@@ -59,7 +61,7 @@ import java.util.List;
  * @since 3.2.0
  */
 @Path("/v1/notification/rule")
-@Api(authorizations = @Authorization(value = "X-Api-Key"))
+@Api(value = "notification", authorizations = @Authorization(value = "X-Api-Key"))
 public class NotificationRuleResource extends AlpineResource {
 
     private static final Logger LOGGER = Logger.getLogger(NotificationRuleResource.class);
@@ -70,9 +72,10 @@ public class NotificationRuleResource extends AlpineResource {
             value = "Returns a list of all notification rules",
             response = NotificationRule.class,
             responseContainer = "List",
-            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of notification rules")
-
+            responseHeaders = @ResponseHeader(name = TOTAL_COUNT_HEADER, response = Long.class, description = "The total number of notification rules"),
+            notes = "<p>Requires permission <strong>SYSTEM_CONFIGURATION</strong></p>"
     )
+    @PaginatedApi
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized")
     })
@@ -90,7 +93,8 @@ public class NotificationRuleResource extends AlpineResource {
     @ApiOperation(
             value = "Creates a new notification rule",
             response = NotificationRule.class,
-            code = 201
+            code = 201,
+            notes = "<p>Requires permission <strong>SYSTEM_CONFIGURATION</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -126,7 +130,8 @@ public class NotificationRuleResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Updates a notification rule",
-            response = NotificationRule.class
+            response = NotificationRule.class,
+            notes = "<p>Requires permission <strong>SYSTEM_CONFIGURATION</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -157,7 +162,8 @@ public class NotificationRuleResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Deletes a notification rule",
-            code = 204
+            code = 204,
+            notes = "<p>Requires permission <strong>SYSTEM_CONFIGURATION</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 401, message = "Unauthorized"),
@@ -182,7 +188,8 @@ public class NotificationRuleResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Adds a project to a notification rule",
-            response = NotificationRule.class
+            response = NotificationRule.class,
+            notes = "<p>Requires permission <strong>SYSTEM_CONFIGURATION</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The rule already has the specified project assigned"),
@@ -191,10 +198,10 @@ public class NotificationRuleResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.SYSTEM_CONFIGURATION)
     public Response addProjectToRule(
-            @ApiParam(value = "The UUID of the rule to add a project to", required = true)
-            @PathParam("ruleUuid") String ruleUuid,
-            @ApiParam(value = "The UUID of the project to add to the rule", required = true)
-            @PathParam("projectUuid") String projectUuid) {
+            @ApiParam(value = "The UUID of the rule to add a project to", format = "uuid", required = true)
+            @PathParam("ruleUuid") @ValidUuid String ruleUuid,
+            @ApiParam(value = "The UUID of the project to add to the rule", format = "uuid", required = true)
+            @PathParam("projectUuid") @ValidUuid String projectUuid) {
         try (QueryManager qm = new QueryManager()) {
             final NotificationRule rule = qm.getObjectByUuid(NotificationRule.class, ruleUuid);
             if (rule == null) {
@@ -223,7 +230,8 @@ public class NotificationRuleResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Removes a project from a notification rule",
-            response = NotificationRule.class
+            response = NotificationRule.class,
+            notes = "<p>Requires permission <strong>SYSTEM_CONFIGURATION</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The rule does not have the specified project assigned"),
@@ -232,10 +240,10 @@ public class NotificationRuleResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.SYSTEM_CONFIGURATION)
     public Response removeProjectFromRule(
-            @ApiParam(value = "The UUID of the rule to remove the project from", required = true)
-            @PathParam("ruleUuid") String ruleUuid,
-            @ApiParam(value = "The UUID of the project to remove from the rule", required = true)
-            @PathParam("projectUuid") String projectUuid) {
+            @ApiParam(value = "The UUID of the rule to remove the project from", format = "uuid", required = true)
+            @PathParam("ruleUuid") @ValidUuid String ruleUuid,
+            @ApiParam(value = "The UUID of the project to remove from the rule", format = "uuid", required = true)
+            @PathParam("projectUuid") @ValidUuid String projectUuid) {
         try (QueryManager qm = new QueryManager()) {
             final NotificationRule rule = qm.getObjectByUuid(NotificationRule.class, ruleUuid);
             if (rule == null) {
@@ -264,7 +272,8 @@ public class NotificationRuleResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Adds a team to a notification rule",
-            response = NotificationRule.class
+            response = NotificationRule.class,
+            notes = "<p>Requires permission <strong>SYSTEM_CONFIGURATION</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The rule already has the specified team assigned"),
@@ -273,10 +282,10 @@ public class NotificationRuleResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.SYSTEM_CONFIGURATION)
     public Response addTeamToRule(
-            @ApiParam(value = "The UUID of the rule to add a team to", required = true)
-            @PathParam("ruleUuid") String ruleUuid,
-            @ApiParam(value = "The UUID of the team to add to the rule", required = true)
-            @PathParam("teamUuid") String teamUuid) {
+            @ApiParam(value = "The UUID of the rule to add a team to", format = "uuid", required = true)
+            @PathParam("ruleUuid") @ValidUuid String ruleUuid,
+            @ApiParam(value = "The UUID of the team to add to the rule", format = "uuid", required = true)
+            @PathParam("teamUuid") @ValidUuid String teamUuid) {
         try (QueryManager qm = new QueryManager()) {
             final NotificationRule rule = qm.getObjectByUuid(NotificationRule.class, ruleUuid);
             if (rule == null) {
@@ -305,7 +314,8 @@ public class NotificationRuleResource extends AlpineResource {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(
             value = "Removes a team from a notification rule",
-            response = NotificationRule.class
+            response = NotificationRule.class,
+            notes = "<p>Requires permission <strong>SYSTEM_CONFIGURATION</strong></p>"
     )
     @ApiResponses(value = {
             @ApiResponse(code = 304, message = "The rule does not have the specified team assigned"),
@@ -314,10 +324,10 @@ public class NotificationRuleResource extends AlpineResource {
     })
     @PermissionRequired(Permissions.Constants.SYSTEM_CONFIGURATION)
     public Response removeTeamFromRule(
-            @ApiParam(value = "The UUID of the rule to remove the project from", required = true)
-            @PathParam("ruleUuid") String ruleUuid,
-            @ApiParam(value = "The UUID of the project to remove from the rule", required = true)
-            @PathParam("teamUuid") String teamUuid) {
+            @ApiParam(value = "The UUID of the rule to remove the project from", format = "uuid", required = true)
+            @PathParam("ruleUuid") @ValidUuid String ruleUuid,
+            @ApiParam(value = "The UUID of the project to remove from the rule", format = "uuid", required = true)
+            @PathParam("teamUuid") @ValidUuid String teamUuid) {
         try (QueryManager qm = new QueryManager()) {
             final NotificationRule rule = qm.getObjectByUuid(NotificationRule.class, ruleUuid);
             if (rule == null) {

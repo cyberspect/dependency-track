@@ -2,7 +2,7 @@
 title: Configuration
 category: Getting Started
 chapter: 1
-order: 5
+order: 6
 ---
 
 ### API server
@@ -55,6 +55,13 @@ alpine.worker.threads=0
 # is set to 0. A machine with 4 cores and a multiplier of 4, will use (at most)
 # 16 worker threads. Default value is 4.
 alpine.worker.thread.multiplier=4
+
+# Required
+# Defines the maximum duration for which Dependency-Track will wait for queued
+# events and notifications to be processed when shutting down.
+# During shutdown, newly dispatched events will not be accepted.
+# The duration must be specified in ISO 8601 notation (https://en.wikipedia.org/wiki/ISO_8601#Durations).
+alpine.worker.pool.drain.timeout.duration=PT5S
 
 # Required
 # Defines the path to the data directory. This directory will hold logs, keys,
@@ -388,6 +395,17 @@ alpine.oidc.team.synchronization=false
 # When using a customizable / on-demand hosted identity provider, name, content, and inclusion in the userinfo endpoint
 # will most likely need to be configured.
 alpine.oidc.teams.claim=groups
+
+# Optional
+# Defines one or more team names that auto-provisioned OIDC users shall be added to.
+# Multiple team names may be provided as comma-separated list.
+# Has no effect when alpine.oidc.user.provisioning=false, or alpine.oidc.team.synchronization=true.
+alpine.oidc.teams.default=
+
+# Optional
+# Define whether system requirement check is enable.
+# The default value is true.
+system.requirement.check.enabled=true
 
 # Optional
 # Defines the size of the thread pool used to perform requests to the Snyk API in parallel.

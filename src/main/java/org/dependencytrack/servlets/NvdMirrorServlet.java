@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.servlets;
 
@@ -36,7 +36,7 @@ public class NvdMirrorServlet extends FileSystemResourceServlet {
     public void init(final ServletConfig config) throws ServletException {
         LOGGER.info("Initializing NVD mirror");
         super.init(config);
-        super.setDirectory(NistMirrorTask.NVD_MIRROR_DIR);
+        super.setDirectory(NistMirrorTask.DEFAULT_NVD_MIRROR_DIR.toString());
         super.setAbsolute(true);
     }
 

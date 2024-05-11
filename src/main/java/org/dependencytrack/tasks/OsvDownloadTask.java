@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.tasks;
 
@@ -250,7 +250,7 @@ public class OsvDownloadTask implements LoggableSubscriber {
 
         if (advisory.getCweIds() != null) {
             for (int i=0; i<advisory.getCweIds().size(); i++) {
-                final Cwe cwe = CweResolver.getInstance().resolve(qm, advisory.getCweIds().get(i));
+                final Cwe cwe = CweResolver.getInstance().lookup(advisory.getCweIds().get(i));
                 if (cwe != null) {
                     vuln.addCwe(cwe);
                 }

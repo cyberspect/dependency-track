@@ -14,7 +14,7 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) Steve Springett. All Rights Reserved.
+ * Copyright (c) OWASP Foundation. All Rights Reserved.
  */
 package org.dependencytrack.notification;
 
@@ -43,5 +43,7 @@ public enum NotificationGroup {
     VEX_CONSUMED,
     VEX_PROCESSED,
     POLICY_VIOLATION,
-    PROJECT_CREATED
+    PROJECT_CREATED,
+    USER_CREATED,
+    USER_DELETED
 }

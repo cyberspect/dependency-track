@@ -15,7 +15,7 @@
   ~ limitations under the License.
   ~
   ~ SPDX-License-Identifier: Apache-2.0
-  ~ Copyright (c) Steve Springett. All Rights Reserved.
+  ~ Copyright (c) OWASP Foundation. All Rights Reserved.
   -->
 <persistence xmlns="http://xmlns.jcp.org/xml/ns/persistence"
              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -27,7 +27,7 @@
         <class>org.dependencytrack.model.Bom</class>
         <class>org.dependencytrack.model.Component</class>
         <class>org.dependencytrack.model.ComponentAnalysisCache</class>
-        <class>org.dependencytrack.model.Cwe</class>
+        <class>org.dependencytrack.model.ComponentProperty</class>
         <class>org.dependencytrack.model.DependencyMetrics</class>
         <class>org.dependencytrack.model.FindingAttribution</class>
         <class>org.dependencytrack.model.License</class>
