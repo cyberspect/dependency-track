@@ -53,7 +53,6 @@ import org.dependencytrack.parser.trivy.TrivyParser;
 import org.dependencytrack.parser.trivy.model.Application;
 import org.dependencytrack.parser.trivy.model.BlobInfo;
 import org.dependencytrack.parser.trivy.model.DeleteRequest;
-import org.dependencytrack.parser.trivy.model.Library;
 import org.dependencytrack.parser.trivy.model.OS;
 import org.dependencytrack.parser.trivy.model.Options;
 import org.dependencytrack.parser.trivy.model.Package;
@@ -224,7 +223,7 @@ public class TrivyAnalysisTask extends BaseComponentAnalyzerTask implements Cach
                         map.put(key, component);
 
                         LOGGER.debug("add library %s".formatted(component.toString()));
-                        app.addLibrary(new Library(name, component.getVersion()));
+                        app.addPackage(new Package(name, component.getVersion(), null, null, null, null, null));
                     } else {
                         String srcName = null;
                         String srcVersion = null;
@@ -259,6 +258,14 @@ public class TrivyAnalysisTask extends BaseComponentAnalyzerTask implements Cach
                                 srcVersion = property.getPropertyValue();
                             } else if (property.getPropertyName().equals("trivy:SrcRelease")) {
                                 srcRelease = property.getPropertyValue();
+                            } else if (!pkgType.contains("-") && property.getPropertyName().equals("trivy:PkgType")) {
+                                pkgType = property.getPropertyValue();
+
+                                String distro = component.getPurl().getQualifiers().get("distro");
+
+                                if (distro != null) {
+                                    pkgType += "-" + distro;
+                                }
                             }
                         }
 
@@ -292,6 +299,7 @@ public class TrivyAnalysisTask extends BaseComponentAnalyzerTask implements Cach
         pkgs.forEach((key, value) -> {
             var info = new BlobInfo();
             info.setPackageInfos(new PackageInfo[]{value});
+            LOGGER.debug("looking for os %s".formatted(key));
             if (os.get(key) != null) {
                 info.setOS(os.get(key));
             }
