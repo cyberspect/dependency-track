@@ -26,8 +26,8 @@ import alpine.notification.NotificationLevel;
 import org.apache.commons.collections4.MultiValuedMap;
 import org.apache.commons.collections4.multimap.HashSetValuedHashMap;
 import org.apache.commons.lang3.exception.ExceptionUtils;
-import org.cyclonedx.BomParserFactory;
 import org.cyclonedx.exception.ParseException;
+import org.cyclonedx.parsers.BomParserFactory;
 import org.cyclonedx.parsers.Parser;
 import org.datanucleus.flush.FlushMode;
 import org.datanucleus.store.query.QueryNotUniqueException;
@@ -689,8 +689,7 @@ public class BomUploadProcessingTaskV2 implements Subscriber {
                     break;
                 }
 
-                final License resolvedCustomLicense = customLicenseCache.computeIfAbsent(licenseCandidate.getName(),
-                        licenseName -> resolveCustomLicense(qm, licenseName));
+                final License resolvedCustomLicense = customLicenseCache.computeIfAbsent(licenseCandidate.getName(), qm::getCustomLicenseByName);
                 if (resolvedCustomLicense != License.UNRESOLVED) {
                     component.setResolvedLicense(resolvedCustomLicense);
                     component.setLicenseUrl(trimToNull(licenseCandidate.getUrl()));
@@ -709,18 +708,6 @@ public class BomUploadProcessingTaskV2 implements Subscriber {
                         component.setLicense(trim(license.getName()));
                         component.setLicenseUrl(trimToNull(license.getUrl()));
                     });
-        }
-    }
-
-    private static License resolveCustomLicense(final QueryManager qm, final String licenseName) {
-        final Query<License> query = qm.getPersistenceManager().newQuery(License.class);
-        query.setFilter("name == :name && customLicense == true");
-        query.setParameters(licenseName);
-        try {
-            final License license = query.executeUnique();
-            return license != null ? license : License.UNRESOLVED;
-        } finally {
-            query.closeAll();
         }
     }
 
@@ -785,7 +772,7 @@ public class BomUploadProcessingTaskV2 implements Subscriber {
 
     private static void dispatchBomConsumedNotification(final Context ctx) {
         Notification.dispatch(new Notification()
-                .scope(NotificationScope.SYSTEM)
+                .scope(NotificationScope.PORTFOLIO)
                 .group(NotificationGroup.BOM_CONSUMED)
                 .level(NotificationLevel.INFORMATIONAL)
                 .title(NotificationConstants.Title.BOM_CONSUMED)
@@ -795,7 +782,7 @@ public class BomUploadProcessingTaskV2 implements Subscriber {
 
     private static void dispatchBomProcessedNotification(final Context ctx) {
         Notification.dispatch(new Notification()
-                .scope(NotificationScope.SYSTEM)
+                .scope(NotificationScope.PORTFOLIO)
                 .group(NotificationGroup.BOM_PROCESSED)
                 .level(NotificationLevel.INFORMATIONAL)
                 .title(NotificationConstants.Title.BOM_CONSUMED)
