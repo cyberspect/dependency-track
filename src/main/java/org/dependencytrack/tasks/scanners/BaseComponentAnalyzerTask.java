@@ -34,11 +34,11 @@ import org.dependencytrack.notification.NotificationScope;
 import org.dependencytrack.persistence.QueryManager;
 import org.dependencytrack.util.NotificationUtil;
 
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonNumber;
-import javax.json.JsonObject;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonNumber;
+import jakarta.json.JsonObject;
 import java.util.Date;
 
 import static org.dependencytrack.util.PersistenceUtil.isUniqueConstraintViolation;
@@ -124,7 +124,6 @@ public abstract class BaseComponentAnalyzerTask implements ScanTask {
                         component identity multiple times concurrently, and is safe to ignore. \
                         [targetHost=%s, source=%s, target=%s]\
                         """.formatted(targetHost, source, target), e);
-                qm.ensureNoActiveTransaction(); // Workaround for https://github.com/DependencyTrack/dependency-track/issues/2677
             } else {
                 throw e;
             }

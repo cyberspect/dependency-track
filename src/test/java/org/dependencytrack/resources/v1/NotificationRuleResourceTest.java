@@ -40,11 +40,11 @@ import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
 
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import javax.ws.rs.client.Entity;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.ws.rs.client.Entity;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -173,6 +173,112 @@ public class NotificationRuleResourceTest extends ResourceTest {
         Assert.assertNull(response.getHeaderString(TOTAL_COUNT_HEADER));
         String body = getPlainTextBody(response);
         Assert.assertEquals("The UUID of the notification rule could not be found.", body);
+    }
+
+    @Test
+    public void updateNotificationRuleWithTagsTest() {
+        final NotificationPublisher publisher = qm.getNotificationPublisher(DefaultNotificationPublishers.SLACK.getPublisherName());
+        final NotificationRule rule = qm.createNotificationRule("Rule 1", NotificationScope.PORTFOLIO, NotificationLevel.INFORMATIONAL, publisher);
+
+        // Tag the rule with "foo" and "bar".
+        Response response = jersey.target(V1_NOTIFICATION_RULE).request()
+                .header(X_API_KEY, apiKey)
+                .post(Entity.entity(/* language=JSON */ """
+                        {
+                          "uuid": "%s",
+                          "name": "Rule 1",
+                          "scope": "PORTFOLIO",
+                          "notificationLevel": "INFORMATIONAL",
+                          "tags": [
+                            {
+                              "name": "foo"
+                            },
+                            {
+                              "name": "bar"
+                            }
+                          ]
+                        }
+                        """.formatted(rule.getUuid()), MediaType.APPLICATION_JSON));
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThatJson(getPlainTextBody(response))
+                .withMatcher("ruleUuid", equalTo(rule.getUuid().toString()))
+                .isEqualTo(/* language=JSON */ """
+                        {
+                          "name": "Rule 1",
+                          "enabled": false,
+                          "notifyChildren": false,
+                          "logSuccessfulPublish": false,
+                          "scope": "PORTFOLIO",
+                          "notificationLevel": "INFORMATIONAL",
+                          "projects": [],
+                          "tags": [
+                            {
+                              "name": "foo"
+                            },
+                            {
+                              "name": "bar"
+                            }
+                          ],
+                          "teams": [],
+                          "notifyOn": [],
+                          "publisher": {
+                            "name": "${json-unit.any-string}",
+                            "description": "${json-unit.any-string}",
+                            "publisherClass": "${json-unit.any-string}",
+                            "templateMimeType": "${json-unit.any-string}",
+                            "defaultPublisher": true,
+                            "uuid": "${json-unit.any-string}"
+                          },
+                          "uuid": "${json-unit.matches:ruleUuid}"
+                        }
+                        """);
+
+        // Replace the previous tags with only "baz".
+        response = jersey.target(V1_NOTIFICATION_RULE).request()
+                .header(X_API_KEY, apiKey)
+                .post(Entity.entity(/* language=JSON */ """
+                        {
+                          "uuid": "%s",
+                          "name": "Rule 1",
+                          "scope": "PORTFOLIO",
+                          "notificationLevel": "INFORMATIONAL",
+                          "tags": [
+                            {
+                              "name": "baz"
+                            }
+                          ]
+                        }
+                        """.formatted(rule.getUuid()), MediaType.APPLICATION_JSON));
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThatJson(getPlainTextBody(response))
+                .withMatcher("ruleUuid", equalTo(rule.getUuid().toString()))
+                .isEqualTo(/* language=JSON */ """
+                        {
+                          "name": "Rule 1",
+                          "enabled": false,
+                          "notifyChildren": false,
+                          "logSuccessfulPublish": false,
+                          "scope": "PORTFOLIO",
+                          "notificationLevel": "INFORMATIONAL",
+                          "projects": [],
+                          "tags": [
+                            {
+                              "name": "baz"
+                            }
+                          ],
+                          "teams": [],
+                          "notifyOn": [],
+                          "publisher": {
+                            "name": "${json-unit.any-string}",
+                            "description": "${json-unit.any-string}",
+                            "publisherClass": "${json-unit.any-string}",
+                            "templateMimeType": "${json-unit.any-string}",
+                            "defaultPublisher": true,
+                            "uuid": "${json-unit.any-string}"
+                          },
+                          "uuid": "${json-unit.matches:ruleUuid}"
+                        }
+                        """);
     }
 
     @Test
@@ -424,6 +530,7 @@ public class NotificationRuleResourceTest extends ResourceTest {
                           "scope": "PORTFOLIO",
                           "notificationLevel": "INFORMATIONAL",
                           "projects": [],
+                          "tags": [],
                           "teams": [
                             {
                               "uuid": "${json-unit.matches:teamUuid}",

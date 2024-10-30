@@ -37,13 +37,15 @@ import org.dependencytrack.notification.NotificationScope;
 import org.dependencytrack.notification.vo.AnalysisDecisionChange;
 import org.dependencytrack.notification.vo.BomConsumedOrProcessed;
 import org.dependencytrack.notification.vo.BomProcessingFailed;
+import org.dependencytrack.notification.vo.BomValidationFailed;
 import org.dependencytrack.notification.vo.NewVulnerabilityIdentified;
+import org.dependencytrack.resources.v1.problems.InvalidBomProblemDetails;
 import org.dependencytrack.notification.vo.NewVulnerableDependency;
 import org.junit.Test;
 
-import javax.json.Json;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
+import jakarta.json.Json;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -92,6 +94,25 @@ public abstract class AbstractPublisherTest<T extends Publisher> extends Persist
                 .content("An error occurred while processing a BOM")
                 .level(NotificationLevel.ERROR)
                 .timestamp(LocalDateTime.ofEpochSecond(66666, 666, ZoneOffset.UTC))
+                .subject(subject);
+
+        assertThatNoException()
+                .isThrownBy(() -> publisherInstance.inform(PublishContext.from(notification), notification, createConfig()));
+    }
+
+    @Test
+    public void testInformWithBomValidationFailedNotification() {
+        final var errorsSample = List.of(
+            "$.components[928].externalReferences[1].url: does not match the iri-reference pattern must be a valid RFC 3987 IRI-reference");
+        final var subject = new BomValidationFailed(createProject(), "bomContent", errorsSample, Bom.Format.CYCLONEDX);
+
+        final var notification = new Notification()
+                .scope(NotificationScope.PORTFOLIO)
+                .group(NotificationGroup.BOM_VALIDATION_FAILED)
+                .title(NotificationConstants.Title.BOM_VALIDATION_FAILED)
+                .content("An error occurred during BOM Validation")
+                .level(NotificationLevel.ERROR)
+                .timestamp(LocalDateTime.ofEpochSecond(1234, 888, ZoneOffset.UTC))
                 .subject(subject);
 
         assertThatNoException()
@@ -189,6 +210,20 @@ public abstract class AbstractPublisherTest<T extends Publisher> extends Persist
                 .content("")
                 .timestamp(LocalDateTime.ofEpochSecond(66666, 666, ZoneOffset.UTC))
                 .subject(subject);
+
+        assertThatNoException()
+                .isThrownBy(() -> publisherInstance.inform(PublishContext.from(notification), notification, createConfig()));
+    }
+
+    @Test
+    public void testInformWithEscapedData() {
+        final var notification = new Notification()
+                .scope(NotificationScope.SYSTEM)
+                .group(NotificationGroup.ANALYZER)
+                .title(NotificationConstants.Title.NOTIFICATION_TEST)
+                .content("! \" § $ % & / ( ) = ? \\ ' * Ö Ü Ä ®️")
+                .level(NotificationLevel.ERROR)
+                .timestamp(LocalDateTime.ofEpochSecond(66666, 666, ZoneOffset.UTC));
 
         assertThatNoException()
                 .isThrownBy(() -> publisherInstance.inform(PublishContext.from(notification), notification, createConfig()));

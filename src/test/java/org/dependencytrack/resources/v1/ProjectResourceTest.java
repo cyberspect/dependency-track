@@ -21,11 +21,15 @@ package org.dependencytrack.resources.v1;
 import alpine.common.util.UuidUtil;
 import alpine.event.framework.EventService;
 import alpine.model.IConfigProperty.PropertyType;
+import alpine.model.ManagedUser;
+import alpine.model.Team;
+import alpine.server.auth.JsonWebToken;
 import alpine.server.filters.ApiFilter;
 import alpine.server.filters.AuthenticationFilter;
 import org.cyclonedx.model.ExternalReference.Type;
 import org.dependencytrack.JerseyTestRule;
 import org.dependencytrack.ResourceTest;
+import org.dependencytrack.auth.Permissions;
 import org.dependencytrack.event.CloneProjectEvent;
 import org.dependencytrack.model.Analysis;
 import org.dependencytrack.model.AnalysisJustification;
@@ -33,6 +37,7 @@ import org.dependencytrack.model.AnalysisResponse;
 import org.dependencytrack.model.AnalysisState;
 import org.dependencytrack.model.Classifier;
 import org.dependencytrack.model.Component;
+import org.dependencytrack.model.ComponentIdentity;
 import org.dependencytrack.model.ConfigPropertyConstants;
 import org.dependencytrack.model.ExternalReference;
 import org.dependencytrack.model.OrganizationalContact;
@@ -49,22 +54,22 @@ import org.dependencytrack.tasks.scanners.AnalyzerIdentity;
 import org.glassfish.jersey.client.HttpUrlConnectorProvider;
 import org.glassfish.jersey.server.ResourceConfig;
 import org.hamcrest.CoreMatchers;
+import org.json.JSONArray;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.ClassRule;
 import org.junit.Test;
 
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import javax.ws.rs.HttpMethod;
-import javax.ws.rs.client.Entity;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.ws.rs.HttpMethod;
+import jakarta.ws.rs.client.Entity;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -76,6 +81,7 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.not;
 
 public class ProjectResourceTest extends ResourceTest {
 
@@ -112,14 +118,7 @@ public class ProjectResourceTest extends ResourceTest {
 
     @Test // https://github.com/DependencyTrack/dependency-track/issues/2583
     public void getProjectsWithAclEnabledTest() {
-        // Enable portfolio access control.
-        qm.createConfigProperty(
-                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getGroupName(),
-                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyName(),
-                "true",
-                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyType(),
-                null
-        );
+        enablePortfolioAccessControl();
 
         // Create project and give access to current principal's team.
         final Project accessProject = qm.createProject("acme-app-a", null, "1.0.0", null, null, null, true, false);
@@ -223,6 +222,42 @@ public class ProjectResourceTest extends ResourceTest {
     }
 
     @Test
+    public void getProjectLookupNotFoundTest() {
+        final var project = new Project();
+        project.setName("acme-app");
+        project.setVersion("1.2.3");
+        qm.persist(project);
+
+        final Response response = jersey.target(V1_PROJECT + "/lookup")
+                .queryParam("name", "acme-app")
+                .queryParam("version", "3.2.1")
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get();
+        assertThat(response.getStatus()).isEqualTo(404);
+        assertThat(getPlainTextBody(response)).isEqualTo("The project could not be found.");
+    }
+
+    @Test
+    public void getProjectLookupNotPermittedTest() {
+        enablePortfolioAccessControl();
+
+        final var project = new Project();
+        project.setName("acme-app");
+        project.setVersion("1.2.3");
+        qm.persist(project);
+
+        final Response response = jersey.target(V1_PROJECT + "/lookup")
+                .queryParam("name", "acme-app")
+                .queryParam("version", "1.2.3")
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get();
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(getPlainTextBody(response)).isEqualTo("Access to the specified project is forbidden");
+    }
+
+    @Test
     public void getProjectsAscOrderedRequestTest() {
         qm.createProject("ABC", null, "1.0", null, null, null, true, false);
         qm.createProject("DEF", null, "1.0", null, null, null, true, false);
@@ -259,202 +294,55 @@ public class ProjectResourceTest extends ResourceTest {
     @Test
     public void getProjectByUuidTest() {
         final var parentProject = new Project();
-        parentProject.setName("parent");
-        parentProject.setVersion("1.2.3");
+        parentProject.setName("acme-app-parent");
+        parentProject.setVersion("1.0.0");
         qm.persist(parentProject);
 
-        final var manufacturer = new OrganizationalEntity();
-        manufacturer.setName("manufacturer");
-
-        final var supplier = new OrganizationalEntity();
-        supplier.setName("supplier");
-
-        final var property = new ProjectProperty();
-        property.setGroupName("groupName");
-        property.setPropertyName("propertyName");
-        property.setPropertyValue("propertyValue");
-        property.setPropertyType(PropertyType.STRING);
-
-        final var externalRef = new ExternalReference();
-        externalRef.setUrl("https://example.com");
-        externalRef.setType(Type.WEBSITE);
-
         final var project = new Project();
-        project.setAuthor("author");
-        project.setPublisher("publisher");
-        project.setManufacturer(manufacturer);
-        project.setSupplier(supplier);
-        project.setGroup("group");
-        project.setName("name");
+        project.setName("acme-app");
         project.setVersion("1.0.0");
-        project.setClassifier(Classifier.LIBRARY);
-        project.setDescription("description");
-        project.setDirectDependencies("[{\"uuid\":\"c162be63-35f0-4059-b28b-327e6a01390a\"}]");
-        project.setCpe("cpe:2.3:*:vendor:product:1.0.0:update:edition:lang:swEdition:targetSw:targetHw:other");
-        project.setPurl("pkg:maven/namespace/name@1.0.0");
-        project.setSwidTagId("swidTagId");
         project.setParent(parentProject);
-        project.setProperties(List.of(property));
-        project.setLastBomImport(new Date(1643767322000L));
-        project.setLastBomImportFormat("lastBomImportFormat");
-        project.setLastInheritedRiskScore(66.6);
-        project.setActive(false);
-        project.setExternalReferences(List.of(externalRef));
         qm.persist(project);
 
-        qm.bind(project, List.of(qm.createTag("tag-1")));
+        final var childProject = new Project();
+        childProject.setName("acme-app-child");
+        childProject.setVersion("1.0.0");
+        childProject.setParent(project);
+        qm.persist(childProject);
 
-        final var metadataAuthor = new OrganizationalContact();
-        metadataAuthor.setName("metadataAuthor");
-        final var metadataSupplier = new OrganizationalEntity();
-        metadataSupplier.setName("metadataSupplier");
-        final var metadata = new ProjectMetadata();
-        metadata.setAuthors(List.of(metadataAuthor));
-        metadata.setSupplier(metadataSupplier);
-        metadata.setProject(project);
-        qm.persist(metadata);
-
-        final var metrics = new ProjectMetrics();
-        metrics.setProject(project);
-        metrics.setCritical(6);
-        metrics.setHigh(6);
-        metrics.setMedium(6);
-        metrics.setLow(6);
-        metrics.setUnassigned(6);
-        metrics.setVulnerabilities(6);
-        metrics.setVulnerableComponents(6);
-        metrics.setComponents(6);
-        metrics.setFindingsTotal(6);
-        metrics.setFindingsAudited(6);
-        metrics.setFindingsUnaudited(6);
-        metrics.setInheritedRiskScore(66.6);
-        metrics.setSuppressed(6);
-        metrics.setPolicyViolationsTotal(6);
-        metrics.setPolicyViolationsFail(6);
-        metrics.setPolicyViolationsInfo(6);
-        metrics.setPolicyViolationsWarn(6);
-        metrics.setPolicyViolationsAudited(6);
-        metrics.setPolicyViolationsUnaudited(6);
-        metrics.setPolicyViolationsLicenseAudited(6);
-        metrics.setPolicyViolationsLicenseTotal(6);
-        metrics.setPolicyViolationsLicenseUnaudited(6);
-        metrics.setPolicyViolationsOperationalAudited(6);
-        metrics.setPolicyViolationsOperationalTotal(6);
-        metrics.setPolicyViolationsOperationalUnaudited(6);
-        metrics.setPolicyViolationsSecurityAudited(6);
-        metrics.setPolicyViolationsSecurityTotal(6);
-        metrics.setPolicyViolationsSecurityUnaudited(6);
-        metrics.setFirstOccurrence(new Date(1677812583000L));
-        metrics.setLastOccurrence(new Date(1677812583000L));
-        qm.persist(metrics);
-
-        final UUID parentProjectUuid = parentProject.getUuid();
-        final UUID projectUuid = project.getUuid();
-
-        // Nuke L1 and L2 cache and close PM to ensure all changes are flushed.
-        qm.getPersistenceManager().getPersistenceManagerFactory().getDataStoreCache().evictAll();
-        qm.getPersistenceManager().evictAll();
-        qm.close();
-
-        final Response response = jersey.target(V1_PROJECT + "/" + projectUuid)
+        Response response = jersey.target(V1_PROJECT + "/" + project.getUuid())
                 .request()
                 .header(X_API_KEY, apiKey)
                 .get();
         assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(response.getHeaderString(TOTAL_COUNT_HEADER)).isNull();
         assertThatJson(getPlainTextBody(response))
-                .withMatcher("parentProjectUuid", equalTo(parentProjectUuid.toString()))
-                .withMatcher("projectUuid", equalTo(projectUuid.toString()))
-                .isEqualTo(/* language=JSON */ """
+                .withMatcher("projectUuid", equalTo(project.getUuid().toString()))
+                .withMatcher("parentUuid", equalTo(parentProject.getUuid().toString()))
+                .withMatcher("childUuid", equalTo(childProject.getUuid().toString()))
+                .isEqualTo("""
                         {
-                          "active": false,
-                          "author": "author",
-                          "children": [],
-                          "classifier": "LIBRARY",
-                          "cpe": "cpe:2.3:*:vendor:product:1.0.0:update:edition:lang:swEdition:targetSw:targetHw:other",
-                          "description": "description",
-                          "directDependencies": "[{\\"uuid\\":\\"c162be63-35f0-4059-b28b-327e6a01390a\\"}]",
-                          "externalReferences": [
-                            {
-                              "type": "website",
-                              "url": "https://example.com"
-                            }
-                          ],
-                          "group": "group",
-                          "lastBomImport": 1643767322000,
-                          "lastBomImportFormat": "lastBomImportFormat",
-                          "lastInheritedRiskScore": 66.6,
-                          "manufacturer": {
-                            "name": "manufacturer"
-                          },
-                          "metadata": {
-                            "supplier": {
-                              "name": "metadataSupplier"
-                            },
-                            "authors": [
-                              {
-                                "name":"metadataAuthor"
-                              }
-                            ]
-                          },
-                          "metrics":{
-                            "critical": 6,
-                            "high": 6,
-                            "medium": 6,
-                            "low": 6,
-                            "unassigned": 6,
-                            "vulnerabilities": 6,
-                            "vulnerableComponents":6,
-                            "components": 6,
-                            "suppressed": 6,
-                            "findingsTotal": 6,
-                            "findingsAudited": 6,
-                            "findingsUnaudited": 6,
-                            "inheritedRiskScore": 66.6,
-                            "policyViolationsFail": 6,
-                            "policyViolationsWarn": 6,
-                            "policyViolationsInfo": 6,
-                            "policyViolationsTotal": 6,
-                            "policyViolationsAudited": 6,
-                            "policyViolationsUnaudited": 6,
-                            "policyViolationsSecurityTotal": 6,
-                            "policyViolationsSecurityAudited": 6,
-                            "policyViolationsSecurityUnaudited": 6,
-                            "policyViolationsLicenseTotal": 6,
-                            "policyViolationsLicenseAudited": 6,
-                            "policyViolationsLicenseUnaudited": 6,
-                            "policyViolationsOperationalTotal": 6,
-                            "policyViolationsOperationalAudited": 6,
-                            "policyViolationsOperationalUnaudited": 6,
-                            "firstOccurrence": 1677812583000,
-                            "lastOccurrence": 1677812583000
-                          },
-                          "name": "name",
-                          "parent": {
-                            "name": "parent",
-                            "uuid": "${json-unit.matches:parentProjectUuid}",
-                            "version": "1.2.3"
-                          },
-                          "properties": [
-                            {
-                              "groupName": "groupName",
-                              "propertyName": "propertyName",
-                              "propertyType": "STRING",
-                              "propertyValue": "propertyValue"
-                            }
-                          ],
-                          "publisher": "publisher",
-                          "purl": "pkg:maven/namespace/name@1.0.0",
-                          "supplier": {
-                            "name": "supplier"
-                          },
-                          "swidTagId": "swidTagId",
-                          "tags": [
-                            {
-                              "name": "tag-1"
-                            }
-                          ],
-                          "uuid": "${json-unit.matches:projectUuid}",
+                          "name": "acme-app",
                           "version": "1.0.0",
+                          "uuid": "${json-unit.matches:projectUuid}",
+                          "parent": {
+                            "name": "acme-app-parent",
+                            "version": "1.0.0",
+                            "uuid": "${json-unit.matches:parentUuid}"
+                          },
+                          "children": [
+                            {
+                              "name": "acme-app-child",
+                              "version": "1.0.0",
+                              "uuid": "${json-unit.matches:childUuid}",
+                              "active": true,
+                              "isLatest":false
+                            }
+                          ],
+                          "properties": [],
+                          "tags": [],
+                          "active": true,
+                          "isLatest":false,
                           "versions": [
                             {
                               "uuid": "${json-unit.matches:projectUuid}",
@@ -463,6 +351,52 @@ public class ProjectResourceTest extends ResourceTest {
                           ]
                         }
                         """);
+    }
+
+    @Test
+    public void getProjectByUuidNotPermittedTest() {
+        enablePortfolioAccessControl();
+
+        final var project = new Project();
+        project.setName("acme-app");
+        qm.persist(project);
+
+        final Response response = jersey.target(V1_PROJECT + "/" + project.getUuid())
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get();
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(getPlainTextBody(response)).isEqualTo("Access to the specified project is forbidden");
+    }
+
+    @Test
+    public void validateProjectVersionsActiveInactiveTest() {
+        Project project = qm.createProject("ABC", null, "1.0", null, null, null, true, false);
+        qm.createProject("ABC", null, "2.0", null, null, null, false, false);
+        qm.createProject("ABC", null, "3.0", null, null, null, true, false);
+
+        Response response = jersey.target(V1_PROJECT + "/" + project.getUuid())
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get(Response.class);
+
+        Assert.assertEquals(200, response.getStatus(), 0);
+        JsonObject json = parseJsonObject(response);
+        Assert.assertNotNull(json);
+        Assert.assertEquals("ABC", json.getString("name"));
+        Assert.assertEquals(3, json.getJsonArray("versions").size());
+
+        Assert.assertNotNull(json.getJsonArray("versions").getJsonObject(0).getJsonString("uuid").getString());
+        Assert.assertEquals("1.0", json.getJsonArray("versions").getJsonObject(0).getJsonString("version").getString());
+        Assert.assertTrue(json.getJsonArray("versions").getJsonObject(0).getBoolean("active"));
+
+        Assert.assertNotNull(json.getJsonArray("versions").getJsonObject(1).getJsonString("uuid").getString());
+        Assert.assertEquals("2.0", json.getJsonArray("versions").getJsonObject(1).getJsonString("version").getString());
+        Assert.assertFalse(json.getJsonArray("versions").getJsonObject(1).getBoolean("active"));
+
+        Assert.assertNotNull(json.getJsonArray("versions").getJsonObject(2).getJsonString("uuid").getString());
+        Assert.assertEquals("3.0", json.getJsonArray("versions").getJsonObject(2).getJsonString("version").getString());
+        Assert.assertTrue(json.getJsonArray("versions").getJsonObject(2).getBoolean("active"));
     }
 
     @Test
@@ -572,6 +506,30 @@ public class ProjectResourceTest extends ResourceTest {
     }
 
     @Test
+    public void createProjectInactiveParentTest() {
+        final var parentProject = new Project();
+        parentProject.setName("acme-app-parent");
+        parentProject.setVersion("1.0.0");
+        parentProject.setActive(false);
+        qm.persist(parentProject);
+
+        final Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .put(Entity.json("""
+                        {
+                          "parent": {
+                            "uuid": "%s"
+                          },
+                          "name": "acme-app",
+                          "version": "1.2.3"
+                        }
+                        """.formatted(parentProject.getUuid())));
+        assertThat(response.getStatus()).isEqualTo(409);
+        assertThat(getPlainTextBody(response)).isEqualTo("An inactive Parent cannot be selected as parent");
+    }
+
+    @Test
     public void createProjectWithoutVersionDuplicateTest() {
         Project project = new Project();
         project.setName("Acme Example");
@@ -601,6 +559,407 @@ public class ProjectResourceTest extends ResourceTest {
     }
 
     @Test
+    public void createProjectAsUserWithAclEnabledAndExistingTeamByUuidTest() {
+        qm.createConfigProperty(
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getGroupName(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyName(),
+                "true",
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyType(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getDescription());
+
+        final ManagedUser testUser = qm.createManagedUser("testuser", TEST_USER_PASSWORD_HASH);
+        qm.addUserToTeam(testUser, team);
+
+        final String userJwt = new JsonWebToken().createToken(testUser);
+
+        final Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header("Authorization", "Bearer " + userJwt)
+                .put(Entity.json(/* language=JSON */ """
+                        {
+                          "name": "acme-app",
+                          "accessTeams": [
+                            {
+                              "uuid": "%s"
+                            }
+                          ]
+                        }
+                        """.formatted(team.getUuid())));
+        assertThat(response.getStatus()).isEqualTo(201);
+        assertThatJson(getPlainTextBody(response))
+                .isEqualTo(/* language=JSON */ """
+                        {
+                          "uuid": "${json-unit.any-string}",
+                          "name": "acme-app",
+                          "classifier": "APPLICATION",
+                          "children": [],
+                          "properties": [],
+                          "tags": [],
+                          "active": true,
+                          "isLatest":false
+                        }
+                        """);
+
+        assertThat(qm.getAllProjects()).satisfiesExactly(project ->
+                assertThat(project.getAccessTeams()).extracting(Team::getName).containsOnly(team.getName()));
+    }
+
+    @Test
+    public void createProjectAsUserWithAclEnabledAndExistingTeamByNameTest() {
+        qm.createConfigProperty(
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getGroupName(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyName(),
+                "true",
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyType(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getDescription());
+
+        final ManagedUser testUser = qm.createManagedUser("testuser", TEST_USER_PASSWORD_HASH);
+        qm.addUserToTeam(testUser, team);
+
+        final String userJwt = new JsonWebToken().createToken(testUser);
+
+        final Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header("Authorization", "Bearer " + userJwt)
+                .put(Entity.json(/* language=JSON */ """
+                        {
+                          "name": "acme-app",
+                          "accessTeams": [
+                            {
+                              "name": "%s"
+                            }
+                          ]
+                        }
+                        """.formatted(team.getName())));
+        assertThat(response.getStatus()).isEqualTo(201);
+        assertThatJson(getPlainTextBody(response))
+                .isEqualTo(/* language=JSON */ """
+                        {
+                          "uuid": "${json-unit.any-string}",
+                          "name": "acme-app",
+                          "classifier": "APPLICATION",
+                          "children": [],
+                          "properties": [],
+                          "tags": [],
+                          "active": true,
+                          "isLatest":false
+                        }
+                        """);
+
+        assertThat(qm.getAllProjects()).satisfiesExactly(project ->
+                assertThat(project.getAccessTeams()).extracting(Team::getName).containsOnly(team.getName()));
+    }
+
+    @Test
+    public void createProjectAsUserWithAclEnabledAndWithoutTeamTest() {
+        qm.createConfigProperty(
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getGroupName(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyName(),
+                "true",
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyType(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getDescription());
+
+        final ManagedUser testUser = qm.createManagedUser("testuser", TEST_USER_PASSWORD_HASH);
+        qm.addUserToTeam(testUser, team);
+
+        final String userJwt = new JsonWebToken().createToken(testUser);
+
+        final Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header("Authorization", "Bearer " + userJwt)
+                .put(Entity.json(/* language=JSON */ """
+                        {
+                          "name": "acme-app"
+                        }
+                        """));
+        assertThat(response.getStatus()).isEqualTo(201);
+        assertThatJson(getPlainTextBody(response))
+                .isEqualTo(/* language=JSON */ """
+                        {
+                          "uuid": "${json-unit.any-string}",
+                          "name": "acme-app",
+                          "classifier": "APPLICATION",
+                          "children": [],
+                          "properties": [],
+                          "tags": [],
+                          "active": true,
+                          "isLatest":false
+                        }
+                        """);
+
+        assertThat(qm.getAllProjects()).satisfiesExactly(project ->
+                assertThat(project.getAccessTeams()).isEmpty());
+    }
+
+    @Test
+    public void createProjectAsUserWithNotAllowedExistingTeamTest() {
+        qm.createConfigProperty(
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getGroupName(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyName(),
+                "true",
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyType(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getDescription());
+
+        final ManagedUser testUser = qm.createManagedUser("testuser", TEST_USER_PASSWORD_HASH);
+
+        final String userJwt = new JsonWebToken().createToken(testUser);
+
+        final Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header("Authorization", "Bearer " + userJwt)
+                .put(Entity.json(/* language=JSON */ """
+                        {
+                          "name": "acme-app",
+                          "accessTeams": [
+                            {
+                              "uuid": "%s"
+                            }
+                          ]
+                        }
+                        """.formatted(team.getUuid())));
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat(getPlainTextBody(response)).isEqualTo("""
+                The team with UUID %s can not be assigned because it does not exist, \
+                or is not accessible to the authenticated principal.""", team.getUuid());
+    }
+
+    @Test
+    public void createProjectAsUserWithAclEnabledAndNotMemberOfTeamAdminTest() {
+        qm.createConfigProperty(
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getGroupName(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyName(),
+                "true",
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyType(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getDescription());
+
+        initializeWithPermissions(Permissions.ACCESS_MANAGEMENT);
+
+        final ManagedUser testUser = qm.createManagedUser("testuser", TEST_USER_PASSWORD_HASH);
+        qm.addUserToTeam(testUser, team);
+
+        final String userJwt = new JsonWebToken().createToken(testUser);
+
+        final Team otherTeam = qm.createTeam("otherTeam", false);
+
+        final Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header("Authorization", "Bearer " + userJwt)
+                .put(Entity.json(/* language=JSON */ """
+                        {
+                          "name": "acme-app",
+                          "accessTeams": [
+                            {
+                              "uuid": "%s"
+                            }
+                          ]
+                        }
+                        """.formatted(otherTeam.getUuid())));
+        assertThat(response.getStatus()).isEqualTo(201);
+        assertThatJson(getPlainTextBody(response))
+                .isEqualTo(/* language=JSON */ """
+                        {
+                          "uuid": "${json-unit.any-string}",
+                          "name": "acme-app",
+                          "classifier": "APPLICATION",
+                          "children": [],
+                          "properties": [],
+                          "tags": [],
+                          "active": true,
+                          "isLatest":false
+                        }
+                        """);
+
+        assertThat(qm.getAllProjects()).satisfiesExactly(project ->
+                assertThat(project.getAccessTeams()).extracting(Team::getName).containsOnly("otherTeam"));
+    }
+
+    @Test
+    public void createProjectAsUserWithAclEnabledAndTeamNotExistingNoAdminTest() {
+        qm.createConfigProperty(
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getGroupName(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyName(),
+                "true",
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyType(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getDescription());
+
+        final ManagedUser testUser = qm.createManagedUser("testuser", TEST_USER_PASSWORD_HASH);
+
+        final String userJwt = new JsonWebToken().createToken(testUser);
+
+        final Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header("Authorization", "Bearer " + userJwt)
+                .put(Entity.json(/* language=JSON */ """
+                        {
+                          "name": "acme-app",
+                          "accessTeams": [
+                            {
+                              "uuid": "419c32eb-5a30-47d5-8a9a-fc0cda651314"
+                            }
+                          ]
+                        }
+                        """));
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat(getPlainTextBody(response)).isEqualTo("""
+                The team with UUID 419c32eb-5a30-47d5-8a9a-fc0cda651314 \
+                can not be assigned because it does not exist, or is not \
+                accessible to the authenticated principal.""");
+    }
+
+    @Test
+    public void createProjectAsUserWithAclEnabledAndTeamNotExistingAdminTest() {
+        qm.createConfigProperty(
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getGroupName(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyName(),
+                "true",
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyType(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getDescription());
+
+        initializeWithPermissions(Permissions.ACCESS_MANAGEMENT);
+
+        final ManagedUser testUser = qm.createManagedUser("testuser", TEST_USER_PASSWORD_HASH);
+        qm.addUserToTeam(testUser, team);
+
+        final String userJwt = new JsonWebToken().createToken(testUser);
+
+        final Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header("Authorization", "Bearer " + userJwt)
+                .put(Entity.json(/* language=JSON */ """
+                        {
+                          "name": "acme-app",
+                          "accessTeams": [
+                            {
+                              "uuid": "419c32eb-5a30-47d5-8a9a-fc0cda651314"
+                            }
+                          ]
+                        }
+                        """));
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat(getPlainTextBody(response)).isEqualTo("""
+                The team with UUID 419c32eb-5a30-47d5-8a9a-fc0cda651314 \
+                can not be assigned because it does not exist, or is not \
+                accessible to the authenticated principal.""");
+    }
+
+    @Test
+    public void createProjectAsApiKeyWithAclEnabledAndWithExistentTeamTest() {
+        qm.createConfigProperty(
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getGroupName(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyName(),
+                "true",
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyType(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getDescription());
+
+        final Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .put(Entity.json(/* language=JSON */ """
+                        {
+                          "name": "acme-app",
+                          "accessTeams": [
+                            {
+                              "uuid": "%s"
+                            }
+                          ]
+                        }
+                        """.formatted(team.getUuid())));
+        assertThat(response.getStatus()).isEqualTo(201);
+        assertThatJson(getPlainTextBody(response))
+                .isEqualTo(/* language=JSON */ """
+                        {
+                          "uuid": "${json-unit.any-string}",
+                          "name": "acme-app",
+                          "classifier": "APPLICATION",
+                          "children": [],
+                          "properties": [],
+                          "tags": [],
+                          "active": true,
+                          "isLatest":false
+                        }
+                        """);
+
+        assertThat(qm.getAllProjects()).satisfiesExactly(project ->
+                assertThat(project.getAccessTeams()).extracting(Team::getName).containsOnly(team.getName()));
+    }
+    @Test
+    public void createProjectAsLatestTest() {
+        Project project = new Project();
+        project.setName("Acme Example");
+        project.setVersion("1.0");
+        Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .put(Entity.entity(project, MediaType.APPLICATION_JSON));
+        Assert.assertEquals(201, response.getStatus(), 0);
+        JsonObject json = parseJsonObject(response);
+        // ensure initial value is false when not specified
+        Assert.assertFalse(json.getBoolean("isLatest"));
+
+        project.setVersion("2.0");
+        project.setIsLatest(true);
+        response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .put(Entity.entity(project, MediaType.APPLICATION_JSON));
+        Assert.assertEquals(201, response.getStatus(), 0);
+        json = parseJsonObject(response);
+        // ensure value of latest version is true when specified
+        Assert.assertTrue(json.getBoolean("isLatest"));
+        String v20uuid = json.getString("uuid");
+
+        project.setVersion("2.1");
+        response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .put(Entity.entity(project, MediaType.APPLICATION_JSON));
+        Assert.assertEquals(201, response.getStatus(), 0);
+        json = parseJsonObject(response);
+        // ensure value of latest version is true when specified
+        Assert.assertTrue(json.getBoolean("isLatest"));
+        // ensure v2.0 is no longer latest
+        Assert.assertFalse(qm.getProject(v20uuid).isLatest());
+    }
+
+    @Test
+    public void createProjectAsLatestWithACLTest() {
+        enablePortfolioAccessControl();
+
+        final var accessProject = new Project();
+        accessProject.setName("acme-app-a");
+        accessProject.setVersion("1.0.0");
+        accessProject.setIsLatest(true);
+        accessProject.setAccessTeams(List.of(team));
+        qm.persist(accessProject);
+
+        final var noAccessProject = new Project();
+        noAccessProject.setName("acme-app-b");
+        noAccessProject.setVersion("2.0.0");
+        noAccessProject.setIsLatest(true);
+        qm.persist(noAccessProject);
+
+        Project project = new Project();
+        project.setName(accessProject.getName());
+        project.setVersion("1.0.1");
+        project.setIsLatest(true);
+        Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .put(Entity.entity(project, MediaType.APPLICATION_JSON));
+        Assert.assertEquals(201, response.getStatus(), 0);
+        JsonObject json = parseJsonObject(response);
+        Assert.assertTrue(json.getBoolean("isLatest"));
+
+        project.setName(noAccessProject.getName());
+        project.setVersion("3.0.0");
+        response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .put(Entity.entity(project, MediaType.APPLICATION_JSON));
+        Assert.assertEquals(403, response.getStatus(), 0);
+    }
+
+    @Test
     public void updateProjectTest() {
         Project project = qm.createProject("ABC", null, "1.0", null, null, null, true, false);
         project.setDescription("Test project");
@@ -614,6 +973,43 @@ public class ProjectResourceTest extends ResourceTest {
         Assert.assertEquals("ABC", json.getString("name"));
         Assert.assertEquals("1.0", json.getString("version"));
         Assert.assertEquals("Test project", json.getString("description"));
+    }
+
+    @Test
+    public void updateProjectNotFoundTest() {
+        final Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .post(Entity.json("""
+                        {
+                          "uuid": "317fe231-01a4-4435-92ad-abd01017bb1a",
+                          "name": "acme-app",
+                          "version": "1.2.3"
+                        }
+                        """));
+        assertThat(response.getStatus()).isEqualTo(404);
+        assertThat(getPlainTextBody(response)).isEqualTo("The UUID of the project could not be found.");
+    }
+
+    @Test
+    public void updateProjectNotPermittedTest() {
+        enablePortfolioAccessControl();
+
+        final var project = new Project();
+        project.setName("acme-app");
+        qm.persist(project);
+
+        final Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .post(Entity.json("""
+                        {
+                          "uuid": "%s",
+                          "name": "acme-app-foo"
+                        }
+                        """.formatted(project.getUuid())));
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(getPlainTextBody(response)).isEqualTo("Access to the specified project is forbidden");
     }
 
     @Test
@@ -717,6 +1113,104 @@ public class ProjectResourceTest extends ResourceTest {
     }
 
     @Test
+    public void updateProjectAsLatestTest() {
+        // create project not as latest
+        Project project = qm.createProject("ABC", null, "1.0", null, null, null,
+                true, false, false);
+
+        // make it latest by update
+        var jsonProject = qm.detach(project);
+        jsonProject.setIsLatest(true);
+        Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .post(Entity.entity(jsonProject, MediaType.APPLICATION_JSON));
+        Assert.assertEquals(200, response.getStatus(), 0);
+        JsonObject json = parseJsonObject(response);
+        Assert.assertTrue(json.getBoolean("isLatest"));
+
+        // add another project version, "forget" to make it latest
+        final Project newProject = qm.createProject("ABC", null, "1.0.1", null, null, null,
+                true, false, false);
+        // make the new version latest afterwards via update
+        jsonProject = qm.detach(newProject);
+        jsonProject.setIsLatest(true);
+        response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .post(Entity.entity(jsonProject, MediaType.APPLICATION_JSON));
+        Assert.assertEquals(200, response.getStatus(), 0);
+        json = parseJsonObject(response);
+        // ensure is now latest
+        Assert.assertTrue(json.getBoolean("isLatest"));
+        // ensure old is no longer latest
+        Assert.assertFalse(qm.getProject(project.getName(), project.getVersion()).isLatest());
+    }
+
+    @Test
+    public void updateProjectAsLatestWithACLAndAccessTest() {
+        enablePortfolioAccessControl();
+
+        final var accessLatestProject = new Project();
+        accessLatestProject.setName("acme-app-a");
+        accessLatestProject.setVersion("1.0.0");
+        accessLatestProject.setIsLatest(true);
+        accessLatestProject.setAccessTeams(List.of(team));
+        qm.persist(accessLatestProject);
+
+        final var accessNotLatestProject = new Project();
+        accessNotLatestProject.setName("acme-app-a");
+        accessNotLatestProject.setVersion("1.0.1");
+        accessNotLatestProject.setIsLatest(false);
+        accessNotLatestProject.setAccessTeams(List.of(team));
+        qm.persist(accessNotLatestProject);
+
+        // make the new version latest afterwards via update
+        final var jsonProject = qm.detach(accessNotLatestProject);
+        jsonProject.setIsLatest(true);
+        Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .post(Entity.entity(jsonProject, MediaType.APPLICATION_JSON));
+        Assert.assertEquals(200, response.getStatus(), 0);
+        JsonObject json = parseJsonObject(response);
+        // ensure is now latest
+        Assert.assertTrue(json.getBoolean("isLatest"));
+        // ensure old is no longer latest (bypass db cache)
+        qm.getPersistenceManager().refreshAll();
+        Assert.assertFalse(qm.getProject(accessLatestProject.getName(), accessLatestProject.getVersion()).isLatest());
+    }
+
+    @Test
+    public void updateProjectAsLatestWithACLAndNoAccessTest() {
+        enablePortfolioAccessControl();
+
+        final var noAccessLatestProject = new Project();
+        noAccessLatestProject.setName("acme-app-a");
+        noAccessLatestProject.setVersion("1.0.0");
+        noAccessLatestProject.setIsLatest(true);
+        qm.persist(noAccessLatestProject);
+
+        final var accessNotLatestProject = new Project();
+        accessNotLatestProject.setName("acme-app-a");
+        accessNotLatestProject.setVersion("1.0.1");
+        accessNotLatestProject.setIsLatest(false);
+        accessNotLatestProject.setAccessTeams(List.of(team));
+        qm.persist(accessNotLatestProject);
+
+        // make the new version latest afterwards via update (but have no access to old latest)
+        final var jsonProject = qm.detach(accessNotLatestProject);
+        jsonProject.setIsLatest(true);
+        Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .post(Entity.entity(jsonProject, MediaType.APPLICATION_JSON));
+        Assert.assertEquals(403, response.getStatus(), 0);
+        // ensure old is still latest
+        Assert.assertTrue(qm.getProject(noAccessLatestProject.getName(), noAccessLatestProject.getVersion()).isLatest());
+    }
+
+    @Test
     public void deleteProjectTest() {
         Project project = qm.createProject("ABC", null, "1.0", null, null, null, true, false);
         Response response = jersey.target(V1_PROJECT + "/" + project.getUuid().toString())
@@ -776,6 +1270,27 @@ public class ProjectResourceTest extends ResourceTest {
                 .property(HttpUrlConnectorProvider.SET_METHOD_WORKAROUND, true)
                 .method("PATCH", Entity.json(new Project()));
         Assert.assertEquals(Response.Status.NOT_FOUND.getStatusCode(), response.getStatus());
+    }
+
+    @Test
+    public void patchProjectNotPermittedTest() {
+        enablePortfolioAccessControl();
+
+        final var project = new Project();
+        project.setName("acme-app");
+        qm.persist(project);
+
+        final Response response = jersey.target(V1_PROJECT + "/" + project.getUuid())
+                .request()
+                .header(X_API_KEY, apiKey)
+                .property(HttpUrlConnectorProvider.SET_METHOD_WORKAROUND, true)
+                .method("PATCH", Entity.json("""
+                        {
+                          "name": "acme-app-foo"
+                        }
+                        """));
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(getPlainTextBody(response)).isEqualTo("Access to the specified project is forbidden");
     }
 
     @Test
@@ -863,7 +1378,9 @@ public class ProjectResourceTest extends ResourceTest {
                               "name": "tag4"
                             }
                           ],
-                          "active": false
+                          "active": false,
+                          "isLatest":false,
+                          "children": []
                         }
                         """);
     }
@@ -935,12 +1452,13 @@ public class ProjectResourceTest extends ResourceTest {
                           },
                           "properties": [],
                           "tags": [],
-                          "active": true
+                          "active": true,
+                          "isLatest":false
                         }
                         """);
 
         // Ensure the parent was updated.
-        qm.getPersistenceManager().refresh(project);
+        qm.getPersistenceManager().evictAll();
         assertThat(project.getParent()).isNotNull();
         assertThat(project.getParent().getUuid()).isEqualTo(newParent.getUuid());
     }
@@ -965,9 +1483,112 @@ public class ProjectResourceTest extends ResourceTest {
         assertThat(getPlainTextBody(response)).isEqualTo("The UUID of the parent project could not be found.");
 
         // Ensure the parent was not modified.
-        qm.getPersistenceManager().refresh(project);
+        qm.getPersistenceManager().evictAll();
         assertThat(project.getParent()).isNotNull();
         assertThat(project.getParent().getUuid()).isEqualTo(parent.getUuid());
+    }
+
+    @Test
+    public void patchProjectAsLatestTest() {
+        // create project not as latest
+        Project project = qm.createProject("ABC", null, "1.0", null, null, null,
+                true, false, false);
+
+        // make it latest by patch
+        var jsonProject = new Project();
+        jsonProject.setIsLatest(true);
+        Response response = jersey.target(V1_PROJECT + "/" + project.getUuid())
+                .request()
+                .header(X_API_KEY, apiKey)
+                .property(HttpUrlConnectorProvider.SET_METHOD_WORKAROUND, true)
+                .method(HttpMethod.PATCH, Entity.json(jsonProject));
+        Assert.assertEquals(200, response.getStatus(), 0);
+        JsonObject json = parseJsonObject(response);
+        Assert.assertTrue(json.getBoolean("isLatest"));
+
+        // add another project version, "forget" to make it latest
+        final Project newProject = qm.createProject("ABC", null, "1.0.1", null, null, null,
+                true, false, false);
+        // make the new version latest afterwards via update
+        jsonProject = new Project();
+        jsonProject.setIsLatest(true);
+        response = jersey.target(V1_PROJECT + "/" + newProject.getUuid())
+                .request()
+                .header(X_API_KEY, apiKey)
+                .property(HttpUrlConnectorProvider.SET_METHOD_WORKAROUND, true)
+                .method(HttpMethod.PATCH, Entity.json(jsonProject));
+        Assert.assertEquals(200, response.getStatus(), 0);
+        json = parseJsonObject(response);
+        // ensure is now latest
+        Assert.assertTrue(json.getBoolean("isLatest"));
+        // ensure old is no longer latest
+        Assert.assertFalse(qm.getProject(project.getName(), project.getVersion()).isLatest());
+    }
+
+    @Test
+    public void patchProjectAsLatestWithACLAndAccessTest() {
+        enablePortfolioAccessControl();
+
+        final var accessLatestProject = new Project();
+        accessLatestProject.setName("acme-app-a");
+        accessLatestProject.setVersion("1.0.0");
+        accessLatestProject.setIsLatest(true);
+        accessLatestProject.setAccessTeams(List.of(team));
+        qm.persist(accessLatestProject);
+
+        final var accessNotLatestProject = new Project();
+        accessNotLatestProject.setName("acme-app-a");
+        accessNotLatestProject.setVersion("1.0.1");
+        accessNotLatestProject.setIsLatest(false);
+        accessNotLatestProject.setAccessTeams(List.of(team));
+        qm.persist(accessNotLatestProject);
+
+        // make the new version latest afterwards via update
+        final var jsonProject = new Project();
+        jsonProject.setIsLatest(true);
+        Response response = jersey.target(V1_PROJECT + "/" + accessNotLatestProject.getUuid())
+                .request()
+                .header(X_API_KEY, apiKey)
+                .property(HttpUrlConnectorProvider.SET_METHOD_WORKAROUND, true)
+                .method(HttpMethod.PATCH, Entity.json(jsonProject));
+        Assert.assertEquals(200, response.getStatus(), 0);
+        JsonObject json = parseJsonObject(response);
+        // ensure is now latest
+        Assert.assertTrue(json.getBoolean("isLatest"));
+        // ensure old is no longer latest (bypass db cache)
+        qm.getPersistenceManager().refreshAll();
+        Assert.assertFalse(qm.getProject(accessLatestProject.getName(), accessLatestProject.getVersion()).isLatest());
+    }
+
+    @Test
+    public void patchProjectAsLatestWithACLAndNoAccessTest() {
+        enablePortfolioAccessControl();
+
+        final var noAccessLatestProject = new Project();
+        noAccessLatestProject.setName("acme-app-a");
+        noAccessLatestProject.setVersion("1.0.0");
+        noAccessLatestProject.setIsLatest(true);
+        qm.persist(noAccessLatestProject);
+
+        final var accessNotLatestProject = new Project();
+        accessNotLatestProject.setName("acme-app-a");
+        accessNotLatestProject.setVersion("1.0.1");
+        accessNotLatestProject.setIsLatest(false);
+        accessNotLatestProject.setAccessTeams(List.of(team));
+        qm.persist(accessNotLatestProject);
+
+        // make the new version latest afterwards via update (but have no access to old latest)
+        final var jsonProject = new Project();
+        jsonProject.setIsLatest(true);
+        Response response = jersey.target(V1_PROJECT + "/" + accessNotLatestProject.getUuid())
+                .request()
+                .header(X_API_KEY, apiKey)
+                .property(HttpUrlConnectorProvider.SET_METHOD_WORKAROUND, true)
+                .method(HttpMethod.PATCH, Entity.json(jsonProject));
+        Assert.assertEquals(403, response.getStatus(), 0);
+        // ensure old is still latest
+        qm.getPersistenceManager().refreshAll();
+        Assert.assertTrue(qm.getProject(noAccessLatestProject.getName(), noAccessLatestProject.getVersion()).isLatest());
     }
 
     @Test
@@ -1105,12 +1726,18 @@ public class ProjectResourceTest extends ResourceTest {
         final var componentSupplier = new OrganizationalEntity();
         componentSupplier.setName("componentSupplier");
 
-        final var component = new Component();
-        component.setProject(project);
-        component.setName("acme-lib");
-        component.setVersion("2.0.0");
-        component.setSupplier(componentSupplier);
-        qm.persist(component);
+        final var componentA = new Component();
+        componentA.setProject(project);
+        componentA.setName("acme-lib-a");
+        componentA.setVersion("2.0.0");
+        componentA.setSupplier(componentSupplier);
+        qm.persist(componentA);
+
+        final var componentB = new Component();
+        componentB.setProject(project);
+        componentB.setName("acme-lib-b");
+        componentB.setVersion("2.1.0");
+        qm.persist(componentB);
 
         final var service = new ServiceComponent();
         service.setProject(project);
@@ -1118,19 +1745,22 @@ public class ProjectResourceTest extends ResourceTest {
         service.setVersion("3.0.0");
         qm.persist(service);
 
+        project.setDirectDependencies(new JSONArray().put(new ComponentIdentity(componentA).toJSON()).toString());
+        componentA.setDirectDependencies(new JSONArray().put(new ComponentIdentity(componentB).toJSON()).toString());
+
         final var vuln = new Vulnerability();
         vuln.setVulnId("INT-123");
         vuln.setSource(Vulnerability.Source.INTERNAL);
         qm.persist(vuln);
 
-        qm.addVulnerability(vuln, component, AnalyzerIdentity.INTERNAL_ANALYZER);
-        final Analysis analysis = qm.makeAnalysis(component, vuln, AnalysisState.NOT_AFFECTED,
+        qm.addVulnerability(vuln, componentA, AnalyzerIdentity.INTERNAL_ANALYZER);
+        final Analysis analysis = qm.makeAnalysis(componentA, vuln, AnalysisState.NOT_AFFECTED,
                 AnalysisJustification.REQUIRES_ENVIRONMENT, AnalysisResponse.WILL_NOT_FIX, "details", false);
         qm.makeAnalysisComment(analysis, "comment", "commenter");
 
         final Response response = jersey.target("%s/clone".formatted(V1_PROJECT)).request()
                 .header(X_API_KEY, apiKey)
-                .put(Entity.json("""
+                .put(Entity.json(/* language=JSON */ """
                         {
                           "project": "%s",
                           "version": "1.1.0",
@@ -1161,6 +1791,18 @@ public class ProjectResourceTest extends ResourceTest {
                     assertThat(clonedProject.getManufacturer()).isNotNull();
                     assertThat(clonedProject.getManufacturer().getName()).isEqualTo("projectManufacturer");
                     assertThat(clonedProject.getAccessTeams()).containsOnly(team);
+                    assertThatJson(clonedProject.getDirectDependencies())
+                            .withMatcher("notSourceComponentUuid", not(equalTo(componentA.getUuid().toString())))
+                            .isEqualTo(/* language=JSON */ """
+                                    [
+                                      {
+                                        "objectType": "COMPONENT",
+                                        "uuid": "${json-unit.matches:notSourceComponentUuid}",
+                                        "name": "acme-lib-a",
+                                        "version": "2.0.0"
+                                      }
+                                    ]
+                                    """);
 
                     final List<ProjectProperty> clonedProperties = qm.getProjectProperties(clonedProject);
                     assertThat(clonedProperties).satisfiesExactly(clonedProperty -> {
@@ -1182,24 +1824,42 @@ public class ProjectResourceTest extends ResourceTest {
                     assertThat(clonedMetadata.getSupplier())
                             .satisfies(entity -> assertThat(entity.getName()).isEqualTo("metadataSupplier"));
 
-                    assertThat(qm.getAllComponents(clonedProject)).satisfiesExactly(clonedComponent -> {
-                        assertThat(clonedComponent.getUuid()).isNotEqualTo(component.getUuid());
-                        assertThat(clonedComponent.getName()).isEqualTo("acme-lib");
-                        assertThat(clonedComponent.getVersion()).isEqualTo("2.0.0");
-                        assertThat(clonedComponent.getSupplier()).isNotNull();
-                        assertThat(clonedComponent.getSupplier().getName()).isEqualTo("componentSupplier");
+                    assertThat(qm.getAllComponents(clonedProject)).satisfiesExactlyInAnyOrder(
+                            clonedComponent -> {
+                                assertThat(clonedComponent.getUuid()).isNotEqualTo(componentA.getUuid());
+                                assertThat(clonedComponent.getName()).isEqualTo("acme-lib-a");
+                                assertThat(clonedComponent.getVersion()).isEqualTo("2.0.0");
+                                assertThat(clonedComponent.getSupplier()).isNotNull();
+                                assertThat(clonedComponent.getSupplier().getName()).isEqualTo("componentSupplier");
+                                assertThatJson(clonedComponent.getDirectDependencies())
+                                        .withMatcher("notSourceComponentUuid", not(equalTo(componentB.getUuid().toString())))
+                                        .isEqualTo(/* language=JSON */ """
+                                                [
+                                                  {
+                                                    "objectType": "COMPONENT",
+                                                    "uuid": "${json-unit.matches:notSourceComponentUuid}",
+                                                    "name": "acme-lib-b",
+                                                    "version": "2.1.0"
+                                                  }
+                                                ]
+                                                """);
 
-                        assertThat(qm.getAllVulnerabilities(clonedComponent)).containsOnly(vuln);
+                                assertThat(qm.getAllVulnerabilities(clonedComponent)).containsOnly(vuln);
 
-                        assertThat(qm.getAnalysis(clonedComponent, vuln)).satisfies(clonedAnalysis -> {
-                            assertThat(clonedAnalysis.getId()).isNotEqualTo(analysis.getId());
-                            assertThat(clonedAnalysis.getAnalysisState()).isEqualTo(AnalysisState.NOT_AFFECTED);
-                            assertThat(clonedAnalysis.getAnalysisJustification()).isEqualTo(AnalysisJustification.REQUIRES_ENVIRONMENT);
-                            assertThat(clonedAnalysis.getAnalysisResponse()).isEqualTo(AnalysisResponse.WILL_NOT_FIX);
-                            assertThat(clonedAnalysis.getAnalysisDetails()).isEqualTo("details");
-                            assertThat(clonedAnalysis.isSuppressed()).isFalse();
-                        });
-                    });
+                                assertThat(qm.getAnalysis(clonedComponent, vuln)).satisfies(clonedAnalysis -> {
+                                    assertThat(clonedAnalysis.getId()).isNotEqualTo(analysis.getId());
+                                    assertThat(clonedAnalysis.getAnalysisState()).isEqualTo(AnalysisState.NOT_AFFECTED);
+                                    assertThat(clonedAnalysis.getAnalysisJustification()).isEqualTo(AnalysisJustification.REQUIRES_ENVIRONMENT);
+                                    assertThat(clonedAnalysis.getAnalysisResponse()).isEqualTo(AnalysisResponse.WILL_NOT_FIX);
+                                    assertThat(clonedAnalysis.getAnalysisDetails()).isEqualTo("details");
+                                    assertThat(clonedAnalysis.isSuppressed()).isFalse();
+                                });
+                            },
+                            clonedComponent -> {
+                                assertThat(clonedComponent.getUuid()).isNotEqualTo(componentA.getUuid());
+                                assertThat(clonedComponent.getName()).isEqualTo("acme-lib-b");
+                                assertThat(clonedComponent.getVersion()).isEqualTo("2.1.0");
+                            });
 
                     assertThat(qm.getAllServiceComponents(clonedProject)).satisfiesExactly(clonedService -> {
                         assertThat(clonedService.getUuid()).isNotEqualTo(service.getUuid());
@@ -1231,13 +1891,7 @@ public class ProjectResourceTest extends ResourceTest {
 
     @Test
     public void cloneProjectWithAclTest() {
-        qm.createConfigProperty(
-                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getGroupName(),
-                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyName(),
-                "true",
-                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyType(),
-                null
-        );
+        enablePortfolioAccessControl();
 
         final var accessProject = new Project();
         accessProject.setName("acme-app-a");
@@ -1274,6 +1928,141 @@ public class ProjectResourceTest extends ResourceTest {
         Assert.assertNotNull(json);
         Assert.assertNotNull(json.getString("token"));
         Assert.assertTrue(UuidUtil.isValidUUID(json.getString("token")));
+    }
+
+    @Test
+    public void cloneProjectAsLatestTest() {
+        EventService.getInstance().subscribe(CloneProjectEvent.class, CloneProjectTask.class);
+
+        final var project = new Project();
+        project.setName("acme-app-a");
+        project.setVersion("1.0.0");
+        project.setIsLatest(true);
+        qm.persist(project);
+
+        final Response response = jersey.target("%s/clone".formatted(V1_PROJECT)).request()
+                .header(X_API_KEY, apiKey)
+                .put(Entity.json("""
+                        {
+                          "project": "%s",
+                          "version": "1.1.0",
+                          "makeCloneLatest": true
+                        }
+                        """.formatted(project.getUuid())));
+        assertThat(response.getStatus()).isEqualTo(200);
+        JsonObject json = parseJsonObject(response);
+        Assert.assertNotNull(json);
+        Assert.assertNotNull(json.getString("token"));
+        Assert.assertTrue(UuidUtil.isValidUUID(json.getString("token")));
+
+        await("Cloning completion")
+                .atMost(Duration.ofSeconds(15))
+                .pollInterval(Duration.ofMillis(50))
+                .untilAsserted(() -> {
+                    final Project clonedProject = qm.getProject("acme-app-a", "1.1.0");
+                    assertThat(clonedProject).isNotNull();
+                    assertThat(clonedProject.isLatest()).isTrue();
+
+                    // ensure source is no longer latest
+                    qm.getPersistenceManager().refresh(project);
+                    assertThat(project.isLatest()).isFalse();
+                });
+    }
+
+    @Test // https://github.com/DependencyTrack/dependency-track/issues/3883
+    public void issue3883RegressionTest() {
+        Response response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .put(Entity.json("""
+                        {
+                          "name": "acme-app-parent",
+                          "version": "1.0.0"
+                        }
+                        """));
+        assertThat(response.getStatus()).isEqualTo(201);
+        final String parentProjectUuid = parseJsonObject(response).getString("uuid");
+
+        response = jersey.target(V1_PROJECT)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .put(Entity.json("""
+                        {
+                          "name": "acme-app",
+                          "version": "1.0.0",
+                          "parent": {
+                            "uuid": "%s"
+                          }
+                        }
+                        """.formatted(parentProjectUuid)));
+        assertThat(response.getStatus()).isEqualTo(201);
+        final String childProjectUuid = parseJsonObject(response).getString("uuid");
+
+        response = jersey.target(V1_PROJECT + "/" + parentProjectUuid)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get();
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThatJson(getPlainTextBody(response)).isEqualTo("""
+                {
+                  "name": "acme-app-parent",
+                  "version": "1.0.0",
+                  "classifier": "APPLICATION",
+                  "uuid": "${json-unit.any-string}",
+                  "children": [
+                    {
+                      "name": "acme-app",
+                      "version": "1.0.0",
+                      "classifier": "APPLICATION",
+                      "uuid": "${json-unit.any-string}",
+                      "active": true,
+                      "isLatest":false
+                    }
+                  ],
+                  "properties": [],
+                  "tags": [],
+                  "active": true,
+                  "isLatest":false,
+                  "versions": [
+                    {
+                      "uuid": "${json-unit.any-string}",
+                      "version": "1.0.0",
+                      "active": true
+                    }
+                  ]
+                }
+                """);
+
+        response = jersey.target(V1_PROJECT + "/" + childProjectUuid)
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get();
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThatJson(getPlainTextBody(response)).isEqualTo("""
+                {
+                  "name": "acme-app",
+                  "version": "1.0.0",
+                  "classifier": "APPLICATION",
+                  "uuid": "${json-unit.any-string}",
+                  "parent": {
+                    "name": "acme-app-parent",
+                    "version": "1.0.0",
+                    "uuid": "${json-unit.any-string}"
+                  },
+                  "children": [],
+                  "properties": [],
+                  "tags": [],
+                  "active": true,
+                  "isLatest":false,
+                  "versions": [
+                    {
+                      "uuid": "${json-unit.any-string}",
+                      "version": "1.0.0",
+                      "active": true
+                    }
+                  ]
+                }
+                """);
     }
 
     @Test // https://github.com/DependencyTrack/dependency-track/issues/4048
@@ -1348,4 +2137,59 @@ public class ProjectResourceTest extends ResourceTest {
         }
     }
 
+    @Test
+    public void getLatestProjectTest() {
+        qm.createProject("Acme Example", null, "1.0.0", null, null, null, true, false);
+        qm.createProject("Acme Example", null, "1.0.2", null, null, null, true, true, false);
+        qm.createProject("Different project", null, "1.0.3", null, null, null, true, true, false);
+
+        Response response = jersey.target(V1_PROJECT_LATEST + "Acme Example")
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get(Response.class);
+        Assert.assertEquals(200, response.getStatus(), 0);
+        JsonObject json = parseJsonObject(response);
+        Assert.assertNotNull(json);
+        Assert.assertEquals("Acme Example", json.getString("name"));
+        Assert.assertEquals("1.0.2", json.getString("version"));
+    }
+
+    @Test
+    public void getLatestProjectWithAclEnabledTest() {
+        enablePortfolioAccessControl();
+
+        // Create project and give access to current principal's team.
+        Project accessProject = qm.createProject("acme-app-a", null, "1.0.0", null, null, null, true, false, false);
+        accessProject.setAccessTeams(List.of(team));
+        qm.persist(accessProject);
+
+        accessProject = qm.createProject("acme-app-a", null, "1.0.2", null, null, null, true, true, false);
+        accessProject.setAccessTeams(List.of(team));
+        qm.persist(accessProject);
+
+        final Response response = jersey.target(V1_PROJECT_LATEST + "acme-app-a")
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get(Response.class);
+        Assert.assertEquals(200, response.getStatus(), 0);
+        JsonObject json = parseJsonObject(response);
+        Assert.assertNotNull(json);
+        Assert.assertEquals("acme-app-a", json.getString("name"));
+        Assert.assertEquals("1.0.2", json.getString("version"));
+    }
+
+    @Test
+    public void getLatestProjectWithAclEnabledNoAccessTest() {
+        enablePortfolioAccessControl();
+
+        // Create projects and give NO access
+        qm.createProject("acme-app-a", null, "1.0.0", null, null, null, true, false, false);
+        qm.createProject("acme-app-a", null, "1.0.2", null, null, null, true, true, false);
+
+        final Response response = jersey.target(V1_PROJECT_LATEST + "acme-app-a")
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get(Response.class);
+        Assert.assertEquals(403, response.getStatus(), 0);
+    }
 }

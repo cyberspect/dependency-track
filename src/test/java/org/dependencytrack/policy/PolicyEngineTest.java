@@ -36,6 +36,7 @@ import org.dependencytrack.model.PolicyViolation;
 import org.dependencytrack.model.Project;
 import org.dependencytrack.model.Severity;
 import org.dependencytrack.model.Tag;
+import org.dependencytrack.model.ViolationAnalysis;
 import org.dependencytrack.model.ViolationAnalysisState;
 import org.dependencytrack.model.Vulnerability;
 import org.dependencytrack.notification.NotificationGroup;
@@ -50,15 +51,18 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.jupiter.api.Assertions;
 
-import java.sql.Date;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 public class PolicyEngineTest extends PersistenceCapableTest {
 
@@ -98,7 +102,7 @@ public class PolicyEngineTest extends PersistenceCapableTest {
         Policy policy = qm.createPolicy("Test Policy", Operator.ANY, ViolationState.INFO);
         qm.createPolicyCondition(policy, Subject.SEVERITY, PolicyCondition.Operator.IS, Severity.CRITICAL.name());
         Tag commonTag = qm.createTag("Tag 1");
-        policy.setTags(List.of(commonTag));
+        qm.bind(policy, List.of(commonTag));
         Project project = qm.createProject("My Project", null, "1", List.of(commonTag), null, null, true, false);
         Component component = new Component();
         component.setName("Test Component");
@@ -121,7 +125,7 @@ public class PolicyEngineTest extends PersistenceCapableTest {
     public void noTagMatchPolicyLimitedToTag() {
         Policy policy = qm.createPolicy("Test Policy", Operator.ANY, ViolationState.INFO);
         qm.createPolicyCondition(policy, Subject.SEVERITY, PolicyCondition.Operator.IS, Severity.CRITICAL.name());
-        policy.setTags(List.of(qm.createTag("Tag 1")));
+        qm.bind(policy, List.of(qm.createTag("Tag 1")));
         Project project = qm.createProject("My Project", null, "1", List.of(qm.createTag("Tag 2")), null, null, true, false);
         Component component = new Component();
         component.setName("Test Component");
@@ -187,6 +191,52 @@ public class PolicyEngineTest extends PersistenceCapableTest {
         qm.persist(parent);
         qm.persist(child);
         qm.persist(grandchild);
+        qm.persist(component);
+        qm.persist(vulnerability);
+        qm.addVulnerability(vulnerability, component, AnalyzerIdentity.INTERNAL_ANALYZER);
+        PolicyEngine policyEngine = new PolicyEngine();
+        List<PolicyViolation> violations = policyEngine.evaluate(List.of(component));
+        Assert.assertEquals(0, violations.size());
+    }
+
+    @Test
+    public void policyForLatestTriggersOnLatestVersion() {
+        Policy policy = qm.createPolicy("Test Policy", Operator.ANY, ViolationState.INFO, true);
+        qm.createPolicyCondition(policy, Subject.SEVERITY, PolicyCondition.Operator.IS, Severity.CRITICAL.name());
+        Project project = qm.createProject("My Project", null, "1", null, null,
+                null, true, true, false);
+        Component component = new Component();
+        component.setName("Test Component");
+        component.setVersion("1.0");
+        component.setProject(project);
+        Vulnerability vulnerability = new Vulnerability();
+        vulnerability.setVulnId("12345");
+        vulnerability.setSource(Vulnerability.Source.INTERNAL);
+        vulnerability.setSeverity(Severity.CRITICAL);
+        qm.persist(project);
+        qm.persist(component);
+        qm.persist(vulnerability);
+        qm.addVulnerability(vulnerability, component, AnalyzerIdentity.INTERNAL_ANALYZER);
+        PolicyEngine policyEngine = new PolicyEngine();
+        List<PolicyViolation> violations = policyEngine.evaluate(List.of(component));
+        Assert.assertEquals(1, violations.size());
+    }
+
+    @Test
+    public void policyForLatestTriggersNotOnNotLatestVersion() {
+        Policy policy = qm.createPolicy("Test Policy", Operator.ANY, ViolationState.INFO, true);
+        qm.createPolicyCondition(policy, Subject.SEVERITY, PolicyCondition.Operator.IS, Severity.CRITICAL.name());
+        Project project = qm.createProject("My Project", null, "1", null, null,
+                null, true, false, false);
+        Component component = new Component();
+        component.setName("Test Component");
+        component.setVersion("1.0");
+        component.setProject(project);
+        Vulnerability vulnerability = new Vulnerability();
+        vulnerability.setVulnId("12345");
+        vulnerability.setSource(Vulnerability.Source.INTERNAL);
+        vulnerability.setSeverity(Severity.CRITICAL);
+        qm.persist(project);
         qm.persist(component);
         qm.persist(vulnerability);
         qm.addVulnerability(vulnerability, component, AnalyzerIdentity.INTERNAL_ANALYZER);
@@ -342,39 +392,44 @@ public class PolicyEngineTest extends PersistenceCapableTest {
         // Evaluate policies and ensure that a notification has been sent.
         final var policyEngine = new PolicyEngine();
         assertThat(policyEngine.evaluate(List.of(component))).hasSize(1);
-        assertThat(NOTIFICATIONS).hasSize(1);
+        assertThat(NOTIFICATIONS).hasSize(2);
 
         // Create an additional policy condition that matches on the exact version of the component,
         // and re-evaluate policies. Ensure that only one notification per newly violated condition was sent.
         final var policyConditionB = qm.createPolicyCondition(policy, Subject.VERSION, PolicyCondition.Operator.NUMERIC_EQUAL, "1.2.3");
         assertThat(policyEngine.evaluate(List.of(component))).hasSize(2);
-        assertThat(NOTIFICATIONS).satisfiesExactly(
-                notification -> {
-                    assertThat(notification.getScope()).isEqualTo(NotificationScope.PORTFOLIO.name());
-                    assertThat(notification.getGroup()).isEqualTo(NotificationGroup.POLICY_VIOLATION.name());
-                    assertThat(notification.getLevel()).isEqualTo(NotificationLevel.INFORMATIONAL);
-                    assertThat(notification.getSubject()).isInstanceOf(PolicyViolationIdentified.class);
-                    final var subject = (PolicyViolationIdentified) notification.getSubject();
-                    assertThat(subject.getComponent().getUuid()).isEqualTo(component.getUuid());
-                    assertThat(subject.getProject().getUuid()).isEqualTo(project.getUuid());
-                    assertThat(subject.getPolicyViolation().getPolicyCondition().getUuid()).isEqualTo(policyConditionA.getUuid());
-                },
-                notification -> {
-                    assertThat(notification.getScope()).isEqualTo(NotificationScope.PORTFOLIO.name());
-                    assertThat(notification.getGroup()).isEqualTo(NotificationGroup.POLICY_VIOLATION.name());
-                    assertThat(notification.getLevel()).isEqualTo(NotificationLevel.INFORMATIONAL);
-                    assertThat(notification.getSubject()).isInstanceOf(PolicyViolationIdentified.class);
-                    final var subject = (PolicyViolationIdentified) notification.getSubject();
-                    assertThat(subject.getComponent().getUuid()).isEqualTo(component.getUuid());
-                    assertThat(subject.getProject().getUuid()).isEqualTo(project.getUuid());
-                    assertThat(subject.getPolicyViolation().getPolicyCondition().getUuid()).isEqualTo(policyConditionB.getUuid());
-                }
-        );
+        await("Notifications")
+                .atMost(Duration.ofSeconds(3))
+                .untilAsserted(() -> assertThat(NOTIFICATIONS).satisfiesExactly(
+                        notification -> {
+                            assertThat(notification.getScope()).isEqualTo(NotificationScope.PORTFOLIO.name());
+                            assertThat(notification.getGroup()).isEqualTo(NotificationGroup.PROJECT_CREATED.name());
+                        },
+                        notification -> {
+                            assertThat(notification.getScope()).isEqualTo(NotificationScope.PORTFOLIO.name());
+                            assertThat(notification.getGroup()).isEqualTo(NotificationGroup.POLICY_VIOLATION.name());
+                            assertThat(notification.getLevel()).isEqualTo(NotificationLevel.INFORMATIONAL);
+                            assertThat(notification.getSubject()).isInstanceOf(PolicyViolationIdentified.class);
+                            final var subject = (PolicyViolationIdentified) notification.getSubject();
+                            assertThat(subject.getComponent().getUuid()).isEqualTo(component.getUuid());
+                            assertThat(subject.getProject().getUuid()).isEqualTo(project.getUuid());
+                            assertThat(subject.getPolicyViolation().getPolicyCondition().getUuid()).isEqualTo(policyConditionA.getUuid());
+                        },
+                        notification -> {
+                            assertThat(notification.getScope()).isEqualTo(NotificationScope.PORTFOLIO.name());
+                            assertThat(notification.getGroup()).isEqualTo(NotificationGroup.POLICY_VIOLATION.name());
+                            assertThat(notification.getLevel()).isEqualTo(NotificationLevel.INFORMATIONAL);
+                            assertThat(notification.getSubject()).isInstanceOf(PolicyViolationIdentified.class);
+                            final var subject = (PolicyViolationIdentified) notification.getSubject();
+                            assertThat(subject.getComponent().getUuid()).isEqualTo(component.getUuid());
+                            assertThat(subject.getProject().getUuid()).isEqualTo(project.getUuid());
+                            assertThat(subject.getPolicyViolation().getPolicyCondition().getUuid()).isEqualTo(policyConditionB.getUuid());
+                        }));
 
         // Delete a policy condition and re-evaluate policies again. No new notifications should be sent.
         qm.deletePolicyCondition(policyConditionA);
         assertThat(policyEngine.evaluate(List.of(component))).hasSize(1);
-        assertThat(NOTIFICATIONS).hasSize(2);
+        assertThat(NOTIFICATIONS).hasSize(3);
     }
 
     @Test
@@ -413,6 +468,141 @@ public class PolicyEngineTest extends PersistenceCapableTest {
         final var policyEngine = new PolicyEngine();
         assertThat(policyEngine.evaluate(List.of(component))).satisfiesExactly(violation ->
                 assertThat(violation.getPolicyCondition().getPolicy().getName()).isEqualTo("Policy A"));
+    }
+
+    @Test
+    public void violationReconciliationWithDuplicatesTest() {
+        final var project = new Project();
+        project.setName("acme-app");
+        qm.persist(project);
+
+        final var componentA = new Component();
+        componentA.setProject(project);
+        componentA.setName("acme-lib-a");
+        qm.persist(componentA);
+        final var componentB = new Component();
+        componentB.setProject(project);
+        componentB.setName("acme-lib-b");
+        qm.persist(componentB);
+        final var componentC = new Component();
+        componentC.setProject(project);
+        componentC.setName("acme-lib-c");
+        qm.persist(componentC);
+        final var componentD = new Component();
+        componentD.setProject(project);
+        componentD.setName("acme-lib-d");
+        qm.persist(componentD);
+
+        final var policy = new Policy();
+        policy.setName("policy");
+        policy.setOperator(Operator.ALL);
+        policy.setViolationState(ViolationState.INFO);
+        qm.persist(policy);
+
+        final var policyCondition = new PolicyCondition();
+        policyCondition.setPolicy(policy);
+        policyCondition.setSubject(Subject.COORDINATES);
+        policyCondition.setOperator(PolicyCondition.Operator.MATCHES);
+        policyCondition.setValue("""
+                {name: "*"}
+                """);
+        qm.persist(policyCondition);
+
+        final var violationTimestamp = new Date();
+
+        // Create two identical violations for component A.
+        final var policyViolationComponentA = new PolicyViolation();
+        policyViolationComponentA.setPolicyCondition(policyCondition);
+        policyViolationComponentA.setComponent(componentA);
+        policyViolationComponentA.setTimestamp(violationTimestamp);
+        policyViolationComponentA.setType(PolicyViolation.Type.OPERATIONAL);
+        qm.persist(policyViolationComponentA);
+        final var policyViolationDuplicateComponentA = new PolicyViolation();
+        policyViolationDuplicateComponentA.setPolicyCondition(policyCondition);
+        policyViolationDuplicateComponentA.setComponent(componentA);
+        policyViolationDuplicateComponentA.setTimestamp(violationTimestamp);
+        policyViolationDuplicateComponentA.setType(PolicyViolation.Type.OPERATIONAL);
+        qm.persist(policyViolationDuplicateComponentA);
+
+        // Create two almost identical violations for component B,
+        // where one of them is older than the other.
+        final var policyViolationComponentB = new PolicyViolation();
+        policyViolationComponentB.setPolicyCondition(policyCondition);
+        policyViolationComponentB.setComponent(componentB);
+        policyViolationComponentB.setTimestamp(violationTimestamp);
+        policyViolationComponentB.setType(PolicyViolation.Type.OPERATIONAL);
+        qm.persist(policyViolationComponentB);
+        final var policyViolationDuplicateComponentB = new PolicyViolation();
+        policyViolationDuplicateComponentB.setPolicyCondition(policyCondition);
+        policyViolationDuplicateComponentB.setComponent(componentB);
+        policyViolationDuplicateComponentB.setTimestamp(Date.from(Instant.now().minus(5, ChronoUnit.MINUTES)));
+        policyViolationDuplicateComponentB.setType(PolicyViolation.Type.OPERATIONAL);
+        qm.persist(policyViolationDuplicateComponentB);
+
+        // Create two identical violations for component C.
+        // Only one of them has an analysis.
+        final var policyViolationComponentC = new PolicyViolation();
+        policyViolationComponentC.setPolicyCondition(policyCondition);
+        policyViolationComponentC.setComponent(componentC);
+        policyViolationComponentC.setTimestamp(violationTimestamp);
+        policyViolationComponentC.setType(PolicyViolation.Type.OPERATIONAL);
+        qm.persist(policyViolationComponentC);
+        final var policyViolationDuplicateComponentC = new PolicyViolation();
+        policyViolationDuplicateComponentC.setPolicyCondition(policyCondition);
+        policyViolationDuplicateComponentC.setComponent(componentC);
+        policyViolationDuplicateComponentC.setTimestamp(violationTimestamp);
+        policyViolationDuplicateComponentC.setType(PolicyViolation.Type.OPERATIONAL);
+        qm.persist(policyViolationDuplicateComponentC);
+        final var violationAnalysisDuplicateComponentC = new ViolationAnalysis();
+        violationAnalysisDuplicateComponentC.setPolicyViolation(policyViolationDuplicateComponentC);
+        violationAnalysisDuplicateComponentC.setComponent(componentC);
+        violationAnalysisDuplicateComponentC.setViolationAnalysisState(ViolationAnalysisState.APPROVED);
+        qm.persist(violationAnalysisDuplicateComponentC);
+
+        // Create two identical violations for component D.
+        // Both have an analysis, but only one of them is suppressed.
+        final var policyViolationComponentD = new PolicyViolation();
+        policyViolationComponentD.setPolicyCondition(policyCondition);
+        policyViolationComponentD.setComponent(componentD);
+        policyViolationComponentD.setTimestamp(violationTimestamp);
+        policyViolationComponentD.setType(PolicyViolation.Type.OPERATIONAL);
+        qm.persist(policyViolationComponentD);
+        final var violationAnalysisComponentD = new ViolationAnalysis();
+        violationAnalysisComponentD.setPolicyViolation(policyViolationComponentD);
+        violationAnalysisComponentD.setComponent(componentD);
+        violationAnalysisComponentD.setViolationAnalysisState(ViolationAnalysisState.REJECTED);
+        qm.persist(violationAnalysisComponentD);
+        final var policyViolationDuplicateComponentD = new PolicyViolation();
+        policyViolationDuplicateComponentD.setPolicyCondition(policyCondition);
+        policyViolationDuplicateComponentD.setComponent(componentD);
+        policyViolationDuplicateComponentD.setTimestamp(violationTimestamp);
+        policyViolationDuplicateComponentD.setType(PolicyViolation.Type.OPERATIONAL);
+        qm.persist(policyViolationDuplicateComponentD);
+        final var violationAnalysisDuplicateComponentD = new ViolationAnalysis();
+        violationAnalysisDuplicateComponentD.setPolicyViolation(policyViolationDuplicateComponentD);
+        violationAnalysisDuplicateComponentD.setComponent(componentD);
+        violationAnalysisDuplicateComponentD.setViolationAnalysisState(ViolationAnalysisState.REJECTED);
+        violationAnalysisDuplicateComponentD.setSuppressed(true);
+        qm.persist(violationAnalysisDuplicateComponentD);
+
+        final var policyEngine = new PolicyEngine();
+        policyEngine.evaluate(List.of(componentA, componentB, componentC, componentD));
+
+        // For component A, the first violation (i.e. lower ID) must be kept.
+        assertThat(qm.getAllPolicyViolations(componentA, /* includeSuppressed */ true)).satisfiesExactlyInAnyOrder(
+                violation -> assertThat(violation.getId()).isEqualTo(policyViolationComponentA.getId()));
+
+        // For component B, the older violation must be kept.
+        assertThat(qm.getAllPolicyViolations(componentB, /* includeSuppressed */ true)).satisfiesExactlyInAnyOrder(
+                violation -> assertThat(violation.getId()).isEqualTo(policyViolationDuplicateComponentB.getId()));
+
+        // For component C, the violation with analysis must be kept.
+        assertThat(qm.getAllPolicyViolations(componentC, /* includeSuppressed */ true)).satisfiesExactlyInAnyOrder(
+                violation -> assertThat(violation.getId()).isEqualTo(policyViolationDuplicateComponentC.getId()));
+
+        // For component D, the suppressed violation must be kept.
+        assertThat(qm.getAllPolicyViolations(componentD, /* includeSuppressed */ true)).satisfiesExactlyInAnyOrder(
+                violation -> assertThat(violation.getId()).isEqualTo(policyViolationDuplicateComponentD.getId()));
     }
 
 }

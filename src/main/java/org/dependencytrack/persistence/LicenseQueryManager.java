@@ -109,6 +109,20 @@ final class LicenseQueryManager extends QueryManager implements IQueryManager {
     }
 
     /**
+     * @since 4.12.0
+     */
+    @Override
+    public License getLicenseByIdOrName(final String licenseIdOrName) {
+        final Query<License> query = pm.newQuery(License.class);
+        query.setFilter("licenseId == :licenseIdOrName || name == :licenseIdOrName");
+        query.setNamedParameters(Map.of("licenseIdOrName", licenseIdOrName));
+        query.setOrdering("licenseId asc"); // Ensure result is consistent.
+        query.setRange(0, 1); // Multiple licenses can have the same name; Pick the first one.
+        final License license = executeAndCloseUnique(query);
+        return license != null ? license : License.UNRESOLVED;
+    }
+
+    /**
      * Returns a Custom License object from the specified name
      * @param licenseName license name of custom license
      * @return a License object, or null if not found
@@ -133,6 +147,20 @@ final class LicenseQueryManager extends QueryManager implements IQueryManager {
         } finally {
             query.closeAll();
         }
+    }
+
+    /**
+     * @since 4.12.0
+     */
+    @Override
+    public License getCustomLicenseByName(final String licenseName) {
+        final Query<License> query = pm.newQuery(License.class);
+        query.setFilter("name == :name && customLicense == true");
+        query.setParameters(licenseName);
+        query.setOrdering("licenseId asc"); // Ensure result is consistent.
+        query.setRange(0, 1); // Multiple licenses can have the same name; Pick the first one.
+        final License license = executeAndCloseUnique(query);
+        return license != null ? license : License.UNRESOLVED;
     }
 
     /**
@@ -217,7 +245,8 @@ final class LicenseQueryManager extends QueryManager implements IQueryManager {
      */
     public void deleteLicense(final License license, final boolean commitIndex) {
         final Query<PolicyCondition> query = pm.newQuery(PolicyCondition.class, "subject == :subject && value == :value");
-        List<PolicyCondition> policyConditions = (List<PolicyCondition>)query.execute(PolicyCondition.Subject.LICENSE ,license.getUuid().toString());
+        query.setParameters(PolicyCondition.Subject.LICENSE, license.getUuid().toString());
+        List<PolicyCondition> policyConditions = executeAndCloseList(query);
         commitSearchIndex(commitIndex, License.class);
         delete(license);
         for (PolicyCondition policyCondition : policyConditions) {

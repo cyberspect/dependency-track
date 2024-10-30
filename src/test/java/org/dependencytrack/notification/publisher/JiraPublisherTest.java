@@ -23,7 +23,7 @@ import alpine.security.crypto.DataEncryption;
 import org.junit.Before;
 import org.junit.Test;
 
-import javax.json.JsonObjectBuilder;
+import jakarta.json.JsonObjectBuilder;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
@@ -108,6 +108,29 @@ public class JiraPublisherTest extends AbstractWebhookPublisherTest<JiraPublishe
                             },
                             "summary" : "[Dependency-Track] [BOM_PROCESSING_FAILED] Bill of Materials Processing Failed",
                             "description" : "An error occurred while processing a BOM\\n\\\\\\\\\\n\\\\\\\\\\n*Level*\\nERROR\\n\\n"
+                          }
+                        }
+                        """)));
+    }
+
+    @Override
+    public void testInformWithBomValidationFailedNotification() {
+        super.testInformWithBomValidationFailedNotification();
+
+        verify(postRequestedFor(urlPathEqualTo("/rest/api/2/issue"))
+                .withHeader("Authorization", equalTo("Basic amlyYVVzZXI6amlyYVBhc3N3b3Jk"))
+                .withHeader("Content-Type", equalTo("application/json"))
+                .withRequestBody(equalToJson("""
+                        {
+                          "fields" : {
+                            "project" : {
+                              "key" : "PROJECT"
+                            },
+                            "issuetype" : {
+                              "name" : "Task"
+                            },
+                            "summary" : "[Dependency-Track] [BOM_VALIDATION_FAILED] Bill of Materials Validation Failed",
+                            "description" : "An error occurred during BOM Validation\\n\\\\\\\\\\n\\\\\\\\\\n*Level*\\nERROR\\n\\n"
                           }
                         }
                         """)));

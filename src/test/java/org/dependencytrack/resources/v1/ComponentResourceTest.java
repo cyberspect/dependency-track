@@ -37,17 +37,18 @@ import org.junit.Assert;
 import org.junit.ClassRule;
 import org.junit.Test;
 
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import javax.ws.rs.client.Entity;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.ws.rs.client.Entity;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
+import static net.javacrumbs.jsonunit.assertj.JsonAssertions.json;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class ComponentResourceTest extends ResourceTest {
@@ -178,6 +179,38 @@ public class ComponentResourceTest extends ResourceTest {
                 .get(Response.class);
         assertThat(response.getStatus()).isEqualTo(HttpStatus.SC_OK);
         assertThat(response.getHeaderString(TOTAL_COUNT_HEADER)).isEqualTo("100"); // 100 direct dependencies
+
+        final JsonArray json = parseJsonArray(response);
+        assertThat(json).hasSize(100);
+    }
+
+    @Test
+    public void getComponentsByNameTest() throws MalformedPackageURLException {
+        final Project project = prepareProject();
+
+        final Response response = jersey.target(V1_COMPONENT + "/project/" + project.getUuid())
+                .queryParam("searchText", "name-1")
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get(Response.class);
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.SC_OK);
+        assertThat(response.getHeaderString(TOTAL_COUNT_HEADER)).isEqualTo("111"); // 75 outdated direct dependencies
+
+        final JsonArray json = parseJsonArray(response);
+        assertThat(json).hasSize(100);
+    }
+
+    @Test
+    public void getComponentsByGroupTest() throws MalformedPackageURLException {
+        final Project project = prepareProject();
+
+        final Response response = jersey.target(V1_COMPONENT + "/project/" + project.getUuid())
+                .queryParam("searchText", "group")
+                .request()
+                .header(X_API_KEY, apiKey)
+                .get(Response.class);
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.SC_OK);
+        assertThat(response.getHeaderString(TOTAL_COUNT_HEADER)).isEqualTo("1000"); // 75 outdated direct dependencies
 
         final JsonArray json = parseJsonArray(response);
         assertThat(json).hasSize(100);
@@ -474,6 +507,7 @@ public class ComponentResourceTest extends ResourceTest {
         component.setProject(project);
         component.setName("My Component");
         component.setVersion("1.0");
+        component.setAuthor("SampleAuthor");
         Response response = jersey.target(V1_COMPONENT + "/project/" + project.getUuid().toString()).request()
                 .header(X_API_KEY, apiKey)
                 .put(Entity.entity(component, MediaType.APPLICATION_JSON));
@@ -481,6 +515,8 @@ public class ComponentResourceTest extends ResourceTest {
         JsonObject json = parseJsonObject(response);
         Assert.assertNotNull(json);
         Assert.assertEquals("My Component", json.getString("name"));
+        Assert.assertEquals("SampleAuthor" ,json.getJsonArray("authors").getJsonObject(0).getString("name"));
+        Assert.assertEquals("SampleAuthor", json.getString("author"));
         Assert.assertEquals("1.0", json.getString("version"));
         Assert.assertTrue(UuidUtil.isValidUUID(json.getString("uuid")));
     }

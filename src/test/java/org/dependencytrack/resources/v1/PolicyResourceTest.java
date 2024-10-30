@@ -34,12 +34,13 @@ import org.glassfish.jersey.server.ResourceConfig;
 import org.junit.ClassRule;
 import org.junit.Test;
 
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import javax.ws.rs.client.Entity;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.ws.rs.client.Entity;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import java.util.Date;
+import java.util.List;
 
 import static java.util.Collections.singletonList;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -210,7 +211,6 @@ public class PolicyResourceTest extends ResourceTest {
         violation.setPolicyCondition(condition);
         violation.setType(PolicyViolation.Type.OPERATIONAL);
         violation.setTimestamp(new Date());
-        violation = qm.addPolicyViolationIfNotExist(violation);
 
         qm.reconcilePolicyViolations(component, singletonList(violation));
 
@@ -290,7 +290,6 @@ public class PolicyResourceTest extends ResourceTest {
     public void addTagToPolicyTest() {
         final Policy policy = qm.createPolicy("policy", Policy.Operator.ANY, Policy.ViolationState.INFO);
         final Tag tag = qm.createTag("Policy Tag");
-        System.out.println("Tag being created is "+qm.getTagByName("Policy Tag"));
 
         final Response response = jersey.target(V1_POLICY + "/" + policy.getUuid() + "/tag/" + tag.getName())
                 .request()
@@ -309,8 +308,7 @@ public class PolicyResourceTest extends ResourceTest {
         final Policy policy = qm.createPolicy("policy", Policy.Operator.ANY, Policy.ViolationState.INFO);
         final Tag tag = qm.createTag("Policy Tag");
 
-        policy.setTags(singletonList(tag));
-        qm.persist(policy);
+        qm.bind(policy, List.of(tag));
 
         final Response response = jersey.target(V1_POLICY + "/" + policy.getUuid() + "/tag/" + tag.getName())
                 .request()
@@ -325,8 +323,7 @@ public class PolicyResourceTest extends ResourceTest {
         final Policy policy = qm.createPolicy("policy", Policy.Operator.ANY, Policy.ViolationState.INFO);
         final Tag tag = qm.createTag("Policy Tag");
 
-        policy.setTags(singletonList(tag));
-        qm.persist(policy);
+        qm.bind(policy, List.of(tag));
 
         final Response response = jersey.target(V1_POLICY + "/" + policy.getUuid() + "/tag/" + tag.getName())
                 .request()
