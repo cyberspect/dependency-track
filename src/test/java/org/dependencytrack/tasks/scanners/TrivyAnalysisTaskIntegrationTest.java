@@ -32,6 +32,7 @@ import org.dependencytrack.model.Vulnerability;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -70,8 +71,7 @@ public class TrivyAnalysisTaskIntegrationTest extends PersistenceCapableTest {
         this.trivyVersion = trivyVersion;
     }
 
-    @Before
-    @Override
+    @BeforeClass
     @SuppressWarnings("resource")
     public static void beforeClass() {
         final DockerClient dockerClient = DockerClientFactory.lazyClient();
