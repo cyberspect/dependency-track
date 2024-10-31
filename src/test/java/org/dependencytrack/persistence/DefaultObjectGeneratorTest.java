@@ -48,7 +48,7 @@ public class DefaultObjectGeneratorTest extends PersistenceCapableTest {
         Method method = generator.getClass().getDeclaredMethod("loadDefaultLicenses");
         method.setAccessible(true);
         method.invoke(generator);
-        Assert.assertEquals(704, qm.getAllLicensesConcise().size());
+        Assert.assertEquals(738, qm.getAllLicensesConcise().size());
     }
 
     @Test
@@ -68,7 +68,7 @@ public class DefaultObjectGeneratorTest extends PersistenceCapableTest {
         method.setAccessible(true);
         method.invoke(generator);
 
-        qm.getPersistenceManager().refresh(license);
+        qm.getPersistenceManager().evictAll();
         assertThat(license.getLicenseId()).isEqualTo("LGPL-2.1+");
         assertThat(license.getName()).isEqualTo("GNU Lesser General Public License v2.1 or later");
         assertThat(license.getComment()).isNotEqualTo("comment");
@@ -93,7 +93,7 @@ public class DefaultObjectGeneratorTest extends PersistenceCapableTest {
         Method method = generator.getClass().getDeclaredMethod("loadDefaultPersonas");
         method.setAccessible(true);
         method.invoke(generator);
-        Assert.assertEquals(3, qm.getTeams().size());
+        Assert.assertEquals(4, qm.getTeams().size());
     }
 
     @Test

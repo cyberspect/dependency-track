@@ -285,6 +285,7 @@ public class OsvDownloadTaskTest extends PersistenceCapableTest {
                  }
                 """)));
 
+        qm.getPersistenceManager().evictAll();
         final Vulnerability vuln = qm.getVulnerabilityByVulnId(Vulnerability.Source.GITHUB, "GHSA-57j2-w4cx-62h2");
         assertThat(vuln).isNotNull();
 
@@ -423,6 +424,12 @@ public class OsvDownloadTaskTest extends PersistenceCapableTest {
         Assert.assertEquals(Severity.MEDIUM, severity);
 
         prepareJsonObject("src/test/resources/unit/osv.jsons/osv-vulnerability-no-range.json");
+        advisory = parser.parse(jsonObject);
+        Assert.assertNotNull(advisory);
+        severity = task.calculateOSVSeverity(advisory);
+        Assert.assertEquals(Severity.UNASSIGNED, severity);
+
+        prepareJsonObject("src/test/resources/unit/osv.jsons/osv-CURL-CVE-2009-0037.json");
         advisory = parser.parse(jsonObject);
         Assert.assertNotNull(advisory);
         severity = task.calculateOSVSeverity(advisory);

@@ -27,12 +27,19 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import org.apache.commons.lang3.StringUtils;
 import org.dependencytrack.model.validation.ValidSpdxExpression;
+import org.dependencytrack.persistence.converter.OrganizationalContactsJsonConverter;
 import org.dependencytrack.persistence.converter.OrganizationalEntityJsonConverter;
 import org.dependencytrack.resources.v1.serializers.CustomPackageURLSerializer;
+import org.dependencytrack.parser.cyclonedx.util.ModelConverter;
 
+import jakarta.json.JsonObject;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import javax.jdo.annotations.Column;
 import javax.jdo.annotations.Convert;
 import javax.jdo.annotations.Element;
@@ -48,11 +55,6 @@ import javax.jdo.annotations.Persistent;
 import javax.jdo.annotations.PrimaryKey;
 import javax.jdo.annotations.Serialized;
 import javax.jdo.annotations.Unique;
-import javax.json.JsonObject;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Pattern;
-import javax.validation.constraints.Size;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -88,6 +90,11 @@ import java.util.UUID;
                 @Persistent(name = "id"),
                 @Persistent(name = "lastInheritedRiskScore"),
                 @Persistent(name = "uuid")
+        }),
+        @FetchGroup(name = "REPO_META_ANALYSIS", members = {
+                @Persistent(name = "id"),
+                @Persistent(name = "purl"),
+                @Persistent(name = "uuid")
         })
 })
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -101,7 +108,8 @@ public class Component implements Serializable {
     public enum FetchGroup {
         ALL,
         INTERNAL_IDENTIFICATION,
-        METRICS_UPDATE
+        METRICS_UPDATE,
+        REPO_META_ANALYSIS
     }
 
     @PrimaryKey
@@ -109,10 +117,10 @@ public class Component implements Serializable {
     @JsonIgnore
     private long id;
 
-    @Persistent
-    @Column(name = "AUTHOR", jdbcType = "CLOB")
-    @Pattern(regexp = RegexSequence.Definition.PRINTABLE_CHARS, message = "The author may only contain printable characters")
-    private String author;
+    @Persistent(defaultFetchGroup = "true")
+    @Convert(OrganizationalContactsJsonConverter.class)
+    @Column(name = "AUTHORS", jdbcType = "CLOB", allowsNull = "true")
+    private List<OrganizationalContact> authors;
 
     @Persistent
     @Column(name = "PUBLISHER", jdbcType = "VARCHAR")
@@ -253,7 +261,7 @@ public class Component implements Serializable {
     @Size(max = 786)
     @com.github.packageurl.validator.PackageURL
     @JsonDeserialize(using = TrimmedStringDeserializer.class)
-    @ApiModelProperty(dataType = "string")
+    @Schema(type = "string")
     private String purl;
 
     @Persistent(defaultFetchGroup = "true")
@@ -386,16 +394,34 @@ public class Component implements Serializable {
         this.id = id;
     }
 
-    public String getAuthor() {
-        return author;
+    public List<OrganizationalContact> getAuthors() {
+        return authors;
     }
 
-    public void setAuthor(String author) {
-        this.author = author;
+    public void setAuthors(List<OrganizationalContact> authors) {
+        this.authors = authors;
     }
 
     public String getPublisher() {
         return publisher;
+    }
+
+    @Deprecated
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String getAuthor(){
+        return ModelConverter.convertContactsToString(this.authors);
+    }
+
+    @Deprecated
+    public void setAuthor(String author){
+        if(this.authors==null){
+            this.authors = new ArrayList<>();
+        } else {
+            this.authors.clear();
+        }
+        this.authors.add(new OrganizationalContact() {{
+            setName(author);
+        }});
     }
 
     public void setPublisher(String publisher) {
@@ -587,7 +613,7 @@ public class Component implements Serializable {
     }
 
     @JsonSerialize(using = CustomPackageURLSerializer.class)
-    @ApiModelProperty(dataType = "string", accessMode = ApiModelProperty.AccessMode.READ_ONLY)
+    @Schema(type = "string", accessMode = Schema.AccessMode.READ_ONLY)
     public PackageURL getPurlCoordinates() {
         if (purlCoordinates == null) {
             return null;
@@ -785,7 +811,7 @@ public class Component implements Serializable {
     }
 
     @JsonIgnore
-    @ApiModelProperty(hidden = true)
+    @Schema(hidden = true)
     public boolean isNew() {
         return isNew;
     }
@@ -804,7 +830,7 @@ public class Component implements Serializable {
     }
 
     @JsonIgnore
-    @ApiModelProperty(hidden = true)
+    @Schema(hidden = true)
     public String getBomRef() {
         return bomRef;
     }
@@ -815,7 +841,7 @@ public class Component implements Serializable {
     }
 
     @JsonIgnore
-    @ApiModelProperty(hidden = true)
+    @Schema(hidden = true)
     public List<org.cyclonedx.model.License> getLicenseCandidates() {
         return licenseCandidates;
     }
@@ -826,7 +852,7 @@ public class Component implements Serializable {
     }
 
     @JsonIgnore
-    @ApiModelProperty(hidden = true)
+    @Schema(hidden = true)
     public JsonObject getCacheResult() {
         return cacheResult;
     }

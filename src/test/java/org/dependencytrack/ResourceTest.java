@@ -24,16 +24,17 @@ import alpine.model.Team;
 import alpine.server.auth.PasswordService;
 import alpine.server.persistence.PersistenceManagerFactory;
 import org.dependencytrack.auth.Permissions;
+import org.dependencytrack.model.ConfigPropertyConstants;
 import org.dependencytrack.persistence.QueryManager;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
 
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import javax.json.JsonReader;
-import javax.ws.rs.core.Response;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonReader;
+import jakarta.ws.rs.core.Response;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.List;
@@ -61,6 +62,7 @@ public abstract class ResourceTest {
     protected final String V1_POLICY = "/v1/policy";
     protected final String V1_POLICY_VIOLATION = "/v1/violation";
     protected final String V1_PROJECT = "/v1/project";
+    protected final String V1_PROJECT_LATEST = "/v1/project/latest/";
     protected final String V1_REPOSITORY = "/v1/repository";
     protected final String V1_SCAN = "/v1/scan";
     protected final String V1_SEARCH = "/v1/search";
@@ -78,6 +80,7 @@ public abstract class ResourceTest {
     protected final String SIZE = "size";
     protected final String TOTAL_COUNT_HEADER = "X-Total-Count";
     protected final String X_API_KEY = "X-Api-Key";
+    protected final String API_KEY = "apiKey";
     protected final String V1_TAG = "/v1/tag";
 
     // Hashing is expensive. Do it once and re-use across tests as much as possible.
@@ -121,6 +124,16 @@ public abstract class ResourceTest {
         }
         team.setPermissions(permissionList);
         qm.persist(team);
+    }
+
+    protected void enablePortfolioAccessControl() {
+        qm.createConfigProperty(
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getGroupName(),
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyName(),
+                "true",
+                ConfigPropertyConstants.ACCESS_MANAGEMENT_ACL_ENABLED.getPropertyType(),
+                null
+        );
     }
 
     protected String getPlainTextBody(Response response) {

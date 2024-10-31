@@ -52,13 +52,12 @@ import org.dependencytrack.search.document.ComponentDocument;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
 
+import javax.jdo.JDOObjectNotFoundException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -67,14 +66,12 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static org.apache.commons.io.IOUtils.resourceToByteArray;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.fail;
 import static org.awaitility.Awaitility.await;
 import static org.dependencytrack.assertion.Assertions.assertConditionWithTimeout;
-import static org.dependencytrack.model.ConfigPropertyConstants.BOM_PROCESSING_TASK_V2_ENABLED;
-import static org.dependencytrack.model.ConfigPropertyConstants.BOM_VALIDATION_ENABLED;
 
-@RunWith(Parameterized.class)
 public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
 
     public static class EventSubscriber implements alpine.event.framework.Subscriber {
@@ -98,34 +95,12 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
     private static final ConcurrentLinkedQueue<Event> EVENTS = new ConcurrentLinkedQueue<>();
     private static final ConcurrentLinkedQueue<Notification> NOTIFICATIONS = new ConcurrentLinkedQueue<>();
 
-    @Parameterized.Parameters(name = "{index}: {0}")
-    public static Collection<Object[]> data() {
-        return Arrays.asList(new Object[][]{
-                {BomUploadProcessingTask.class.getSimpleName()},
-                {BomUploadProcessingTaskV2.class.getSimpleName()}
-        });
-    }
-
-    private final String taskName;
-
-    public BomUploadProcessingTaskTest(final String taskName) {
-        this.taskName = taskName;
-    }
-
     @Before
     public void setUp() {
         EventService.getInstance().subscribe(IndexEvent.class, EventSubscriber.class);
         EventService.getInstance().subscribe(RepositoryMetaEvent.class, EventSubscriber.class);
         EventService.getInstance().subscribe(VulnerabilityAnalysisEvent.class, EventSubscriber.class);
         NotificationService.getInstance().subscribe(new Subscription(NotificationSubscriber.class));
-
-        qm.createConfigProperty(
-                BOM_PROCESSING_TASK_V2_ENABLED.getGroupName(),
-                BOM_PROCESSING_TASK_V2_ENABLED.getPropertyName(),
-                (BomUploadProcessingTaskV2.class.getSimpleName().equals(taskName)) ? "true" : "false",
-                BOM_PROCESSING_TASK_V2_ENABLED.getPropertyType(),
-                null
-        );
 
         // Enable processing of CycloneDX BOMs
         qm.createConfigProperty(ConfigPropertyConstants.ACCEPT_ARTIFACT_CYCLONEDX.getGroupName(),
@@ -187,11 +162,14 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()),
                 resourceToByteArray("/unit/bom-1.xml"));
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         qm.getPersistenceManager().refresh(project);
         assertThat(project.getClassifier()).isEqualTo(Classifier.APPLICATION);
+        assertThat(project.getCpe()).isEqualTo("cpe:2.3:a:acme:example:1.0.0:*:*:*:*:*:*:*");
+        assertThat(project.getPurl()).asString().isEqualTo("pkg:maven/com.acme/example@1.0.0");
+        assertThat(project.getSwidTagId()).isEqualTo("swidgen-242eb18a-503e-ca37-393b-cf156ef09691_9.1.1");
         assertThat(project.getLastBomImport()).isNotNull();
         assertThat(project.getExternalReferences()).isNotNull();
         assertThat(project.getExternalReferences()).hasSize(4);
@@ -239,7 +217,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
         assertThat(component.getSupplier().getContacts().get(0).getEmail()).isEqualTo("foojr@bar.com");
         assertThat(component.getSupplier().getContacts().get(0).getPhone()).isEqualTo("123-456-7890");
 
-        assertThat(component.getAuthor()).isEqualTo("Sometimes this field is long because it is composed of a list of authors......................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................");
+        assertThat(component.getAuthors().get(0).getName()).isEqualTo("Sometimes this field is long because it is composed of a list of authors......................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................");
         assertThat(component.getPublisher()).isEqualTo("Example Incorporated");
         assertThat(component.getGroup()).isEqualTo("com.example");
         assertThat(component.getName()).isEqualTo("xmlutil");
@@ -301,16 +279,11 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
 
     @Test
     public void informWithEmptyBomTest() throws Exception {
-        // Known to now work with old task implementation.
-        if (BomUploadProcessingTask.class.getSimpleName().equals(taskName)) {
-            return;
-        }
-
         Project project = qm.createProject("Acme Example", null, "1.0", null, null, null, true, false);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()),
                 resourceToByteArray("/unit/bom-empty.json"));
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         qm.getPersistenceManager().refresh(project);
@@ -323,19 +296,6 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
 
     @Test
     public void informWithInvalidCycloneDxBomTest() throws Exception {
-        // Known to now work with old task implementation.
-        if (BomUploadProcessingTask.class.getSimpleName().equals(taskName)) {
-            return;
-        }
-
-        qm.createConfigProperty(
-                BOM_VALIDATION_ENABLED.getGroupName(),
-                BOM_VALIDATION_ENABLED.getPropertyName(),
-                "true",
-                BOM_VALIDATION_ENABLED.getPropertyType(),
-                null
-        );
-
         final Project project = qm.createProject("Acme Example", null, "1.0", null, null, null, true, false);
 
         final byte[] bomBytes = """
@@ -343,7 +303,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                   "bomFormat": "CycloneDX",
                 """.getBytes(StandardCharsets.UTF_8);
 
-        new BomUploadProcessingTaskV2().inform(new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes));
+        new BomUploadProcessingTask().inform(new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes));
         assertConditionWithTimeout(() -> NOTIFICATIONS.size() >= 2, Duration.ofSeconds(5));
 
         assertThat(NOTIFICATIONS).satisfiesExactly(
@@ -371,18 +331,13 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
 
     @Test
     public void informWithNonExistentProjectTest() throws Exception {
-        // Known to now work with old task implementation.
-        if (BomUploadProcessingTask.class.getSimpleName().equals(taskName)) {
-            return;
-        }
-
         final Project project = new Project();
         project.setId(1);
         project.setUuid(UUID.randomUUID());
         project.setName("test-project");
 
         var bomUploadEvent = new BomUploadEvent(project, resourceToByteArray("/unit/bom-1.xml"));
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
 
         await("BOM Processing Failed Notification")
                 .atMost(Duration.ofSeconds(5))
@@ -395,16 +350,11 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
 
     @Test
     public void informWithComponentsUnderMetadataBomTest() throws Exception {
-        // Known to now work with old task implementation.
-        if (taskName == BomUploadProcessingTask.class.getSimpleName()) {
-            return;
-        }
-
         final var project = qm.createProject("Acme Example", null, "1.0", null, null, null, true, false);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()),
                 resourceToByteArray("/unit/bom-metadata-components.json"));
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         final List<Bom> boms = qm.getAllBoms(project);
@@ -431,11 +381,6 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
 
     @Test
     public void informWithExistingDuplicateComponentsTest() {
-        // Known to now work with old task implementation.
-        if (BomUploadProcessingTask.class.getSimpleName().equals(taskName)) {
-            return;
-        }
-
         final var project = new Project();
         project.setName("acme-app");
         project.setVersion("1.0.0");
@@ -454,6 +399,9 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
         componentB.setName("acme-lib");
         componentB.setVersion("2.0.0");
         qm.persist(componentB);
+
+        final Component transientComponentA = qm.makeTransient(componentA);
+        final Component transientComponentB = qm.makeTransient(componentB);
 
         final byte[] bomBytes = """
                 {
@@ -474,7 +422,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 """.getBytes(StandardCharsets.UTF_8);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes);
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         qm.getPersistenceManager().evictAll();
@@ -494,7 +442,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                     assertThat(indexEvent.getIndexableClass()).isEqualTo(Component.class);
                     assertThat(indexEvent.getAction()).isEqualTo(IndexEvent.Action.UPDATE);
                     final var searchDoc = (ComponentDocument) indexEvent.getDocument();
-                    assertThat(searchDoc.uuid()).isEqualTo(componentA.getUuid());
+                    assertThat(searchDoc.uuid()).isEqualTo(transientComponentA.getUuid());
                 },
                 event -> {
                     assertThat(event).isInstanceOf(IndexEvent.class);
@@ -502,7 +450,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                     assertThat(indexEvent.getIndexableClass()).isEqualTo(Component.class);
                     assertThat(indexEvent.getAction()).isEqualTo(IndexEvent.Action.DELETE);
                     final var searchDoc = (ComponentDocument) indexEvent.getDocument();
-                    assertThat(searchDoc.uuid()).isEqualTo(componentB.getUuid());
+                    assertThat(searchDoc.uuid()).isEqualTo(transientComponentB.getUuid());
                 },
                 event -> {
                     assertThat(event).isInstanceOf(IndexEvent.class);
@@ -517,16 +465,11 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
 
     @Test
     public void informWithBloatedBomTest() throws Exception {
-        // Known to now work with old task implementation.
-        if (BomUploadProcessingTask.class.getSimpleName().equals(taskName)) {
-            return;
-        }
-
         final var project = qm.createProject("Acme Example", null, "1.0", null, null, null, true, false);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()),
                 resourceToByteArray("/unit/bom-bloated.json"));
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         final List<Bom> boms = qm.getAllBoms(project);
@@ -573,11 +516,6 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
 
     @Test
     public void informWithCustomLicenseResolutionTest() throws Exception {
-        // Known to now work with old task implementation.
-        if (BomUploadProcessingTask.class.getSimpleName().equals(taskName)) {
-            return;
-        }
-
         final var customLicense = new License();
         customLicense.setName("custom license foobar");
         qm.createCustomLicense(customLicense, false);
@@ -586,7 +524,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()),
                 resourceToByteArray("/unit/bom-custom-license.json"));
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         assertThat(qm.getAllComponents(project)).satisfiesExactly(
@@ -639,7 +577,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 """.getBytes(StandardCharsets.UTF_8);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes);
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         assertThat(qm.getAllComponents(project)).satisfiesExactly(component -> {
@@ -684,7 +622,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 """.getBytes(StandardCharsets.UTF_8);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes);
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         assertThat(qm.getAllComponents(project)).satisfiesExactly(component -> {
@@ -725,7 +663,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 """.getBytes(StandardCharsets.UTF_8);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes);
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         assertThat(qm.getAllComponents(project)).satisfiesExactly(component -> {
@@ -769,7 +707,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 """.getBytes(StandardCharsets.UTF_8);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes);
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         assertThat(qm.getAllComponents(project)).satisfiesExactly(component -> {
@@ -820,7 +758,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 """.getBytes(StandardCharsets.UTF_8);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), existingBomBytes);
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         assertThat(qm.getAllComponents(project)).satisfiesExactly(component -> {
@@ -854,7 +792,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 }
                 """.getBytes(StandardCharsets.UTF_8);
 
-        new BomUploadProcessingTaskV2().inform(new BomUploadEvent(qm.detach(Project.class, project.getId()), updatedBomBytes));
+        new BomUploadProcessingTask().inform(new BomUploadEvent(qm.detach(Project.class, project.getId()), updatedBomBytes));
         awaitBomProcessedNotification(bomUploadEvent);
         qm.getPersistenceManager().evictAll();
 
@@ -902,7 +840,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 """.getBytes(StandardCharsets.UTF_8);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), existingBomBytes);
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         assertThat(qm.getAllComponents(project)).satisfiesExactly(component -> {
@@ -930,7 +868,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 }
                 """.getBytes(StandardCharsets.UTF_8);
 
-        new BomUploadProcessingTaskV2().inform(new BomUploadEvent(qm.detach(Project.class, project.getId()), updatedBomBytes));
+        new BomUploadProcessingTask().inform(new BomUploadEvent(qm.detach(Project.class, project.getId()), updatedBomBytes));
         awaitBomProcessedNotification(bomUploadEvent);
         qm.getPersistenceManager().evictAll();
 
@@ -948,7 +886,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()),
                 resourceToByteArray("/unit/bom-service.json"));
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         assertThat(qm.getAllComponents(project)).isNotEmpty();
@@ -988,7 +926,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                   ]
                 }
                 """.getBytes());
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         qm.getPersistenceManager().refresh(component);
@@ -1034,7 +972,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                   ]
                 }
                 """.getBytes());
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         qm.getPersistenceManager().refresh(component);
@@ -1043,6 +981,72 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
             assertThat(property.getPropertyName()).isEqualTo("foo");
             assertThat(property.getPropertyValue()).isEqualTo("baz");
             assertThat(property.getUuid()).isNotEqualTo(componentProperty.getUuid());
+        });
+    }
+
+    @Test
+    public void informWithExistingDuplicateComponentPropertiesAndBomWithDuplicateComponentProperties() {
+        final var project = new Project();
+        project.setName("acme-app");
+        qm.persist(project);
+
+        final var component = new Component();
+        component.setProject(project);
+        component.setName("acme-lib");
+        component.setClassifier(Classifier.LIBRARY);
+        qm.persist(component);
+
+        final var componentPropertyA = new ComponentProperty();
+        componentPropertyA.setComponent(component);
+        componentPropertyA.setPropertyName("foo");
+        componentPropertyA.setPropertyValue("bar");
+        componentPropertyA.setPropertyType(PropertyType.STRING);
+        qm.persist(componentPropertyA);
+
+        final var componentPropertyB = new ComponentProperty();
+        componentPropertyB.setComponent(component);
+        componentPropertyB.setPropertyName("foo");
+        componentPropertyB.setPropertyValue("bar");
+        componentPropertyB.setPropertyType(PropertyType.STRING);
+        qm.persist(componentPropertyB);
+
+        final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), """
+                {
+                  "bomFormat": "CycloneDX",
+                  "specVersion": "1.4",
+                  "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+                  "version": 1,
+                  "components": [
+                    {
+                      "type": "library",
+                      "name": "acme-lib",
+                      "properties": [
+                        {
+                          "name": "foo",
+                          "value": "bar"
+                        },
+                        {
+                          "name": "foo",
+                          "value": "bar"
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """.getBytes());
+        new BomUploadProcessingTask().inform(bomUploadEvent);
+        awaitBomProcessedNotification(bomUploadEvent);
+
+        qm.getPersistenceManager().evictAll();
+        assertThatNoException()
+                .isThrownBy(() -> qm.getPersistenceManager().refresh(componentPropertyA));
+        assertThatExceptionOfType(JDOObjectNotFoundException.class)
+                .isThrownBy(() -> qm.getPersistenceManager().refresh(componentPropertyB));
+        assertThat(component.getProperties()).satisfiesExactly(property -> {
+            assertThat(property.getGroupName()).isNull();
+            assertThat(property.getPropertyName()).isEqualTo("foo");
+            assertThat(property.getPropertyValue()).isEqualTo("bar");
+            assertThat(property.getUuid()).isEqualTo(componentPropertyA.getUuid());
         });
     }
 
@@ -1080,7 +1084,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 """.getBytes(StandardCharsets.UTF_8);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes);
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         assertThat(qm.getAllComponents(project)).satisfiesExactly(component -> {
@@ -1090,7 +1094,12 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void informWithUnresolvedLicenseByNameTest() {
+    public void informWithLicenseResolutionByIdOrNameTest() {
+        final var license = new License();
+        license.setLicenseId("MIT");
+        license.setName("MIT License");
+        qm.persist(license);
+
         final var project = new Project();
         project.setName("acme-license-app");
         qm.persist(project);
@@ -1108,7 +1117,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                       "licenses": [
                         {
                           "license": {
-                            "name": "MIT License"
+                            "name": "MIT"
                           }
                         }
                       ]
@@ -1118,25 +1127,62 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 """.getBytes(StandardCharsets.UTF_8);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes);
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
-        assertThat(qm.getAllComponents(project)).satisfiesExactly(component -> assertThat(component.getResolvedLicense()).isNull());
+        assertThat(qm.getAllComponents(project)).satisfiesExactly(component -> {
+            assertThat(component.getResolvedLicense()).isNotNull();
+            assertThat(component.getResolvedLicense().getLicenseId()).isEqualTo("MIT");
+        });
+    }
+
+    @Test
+    public void informWithEmptyComponentAndServiceNameTest() {
+        final var project = new Project();
+        project.setName("acme-license-app");
+        qm.persist(project);
+
+        final byte[] bomBytes = """
+                {
+                  "bomFormat": "CycloneDX",
+                  "specVersion": "1.4",
+                  "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b80",
+                  "version": 1,
+                  "components": [
+                    {
+                      "type": "library",
+                      "name": ""
+                    }
+                  ],
+                  "services": [
+                    {
+                      "name": ""
+                    }
+                  ]
+                }
+                """.getBytes(StandardCharsets.UTF_8);
+
+        final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
+        awaitBomProcessedNotification(bomUploadEvent);
+
+        qm.getPersistenceManager().evictAll();
+        assertThat(qm.getAllComponents(project)).satisfiesExactly(component -> {
+            assertThat(component.getName()).isEqualTo("-");
+        });
+        assertThat(qm.getAllServiceComponents(project)).satisfiesExactly(service -> {
+            assertThat(service.getName()).isEqualTo("-");
+        });
     }
 
     @Test // https://github.com/DependencyTrack/dependency-track/issues/1905
     public void informIssue1905Test() throws Exception {
-        // Known to now work with old task implementation.
-        if (BomUploadProcessingTask.class.getSimpleName().equals(taskName)) {
-            return;
-        }
-
         final var project = qm.createProject("Acme Example", null, "1.0", null, null, null, true, false);
 
         for (int i = 0; i < 3; i++) {
             var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()),
                     resourceToByteArray("/unit/bom-issue1905.json"));
-            new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+            new BomUploadProcessingTask().inform(bomUploadEvent);
 
             // Make sure processing did not fail.
             awaitBomProcessedNotification(bomUploadEvent);
@@ -1165,11 +1211,6 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
 
     @Test // https://github.com/DependencyTrack/dependency-track/issues/2519
     public void informIssue2519Test() throws Exception {
-        // Known to now work with old task implementation.
-        if (BomUploadProcessingTask.class.getSimpleName().equals(taskName)) {
-            return;
-        }
-
         final var project = qm.createProject("Acme Example", null, "1.0", null, null, null, true, false);
 
         // Upload the same BOM again a few times.
@@ -1177,7 +1218,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
         for (int i = 0; i < 3; i++) {
             var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()),
                     resourceToByteArray("/unit/bom-issue2519.xml"));
-            new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+            new BomUploadProcessingTask().inform(bomUploadEvent);
 
             // Make sure processing did not fail.
             awaitBomProcessedNotification(bomUploadEvent);
@@ -1229,25 +1270,20 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 """.getBytes();
 
         var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes);
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
         assertProjectAuthors.run();
 
         NOTIFICATIONS.clear();
 
         bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes);
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
         assertProjectAuthors.run();
     }
 
     @Test // https://github.com/DependencyTrack/dependency-track/issues/3371
     public void informIssue3371Test() throws Exception {
-        // Known to now work with old task implementation.
-        if (BomUploadProcessingTask.class.getSimpleName().equals(taskName)) {
-            return;
-        }
-
         final var project = qm.createProject("Acme Example", null, "1.0", null, null, null, true, false);
 
         // Upload the same BOM again a few times.
@@ -1255,7 +1291,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
         for (int i = 0; i < 2; i++) {
             var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()),
                     resourceToByteArray("/unit/bom-issue3371.json"));
-            new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+            new BomUploadProcessingTask().inform(bomUploadEvent);
 
             // Make sure processing did not fail.
             awaitBomProcessedNotification(bomUploadEvent);
@@ -1316,7 +1352,7 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
                 """.getBytes(StandardCharsets.UTF_8);
 
         final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes);
-        new BomUploadProcessingTaskV2().inform(bomUploadEvent);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
         awaitBomProcessedNotification(bomUploadEvent);
 
         qm.getPersistenceManager().evictAll();
@@ -1326,13 +1362,108 @@ public class BomUploadProcessingTaskTest extends PersistenceCapableTest {
         });
     }
 
+    @Test
+    public void informIssue3981Test() {
+        final var project = new Project();
+        project.setName("acme-license-app");
+        project.setVersion("1.2.3");
+        qm.persist(project);
+
+        byte[] bomBytes = """
+                {
+                  "bomFormat": "CycloneDX",
+                  "specVersion": "1.6",
+                  "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b80",
+                  "version": 1,
+                  "metadata": {
+                    "authors": [
+                      {
+                        "name": "foo",
+                        "email": "foo@example.com"
+                      }
+                    ]
+                  },
+                  "components": [
+                    {
+                      "type": "library",
+                      "name": "acme-lib-x"
+                    }
+                  ]
+                }
+                """.getBytes(StandardCharsets.UTF_8);
+
+        var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()), bomBytes);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
+        awaitBomProcessedNotification(bomUploadEvent);
+        NOTIFICATIONS.clear();
+
+        final Project clonedProject = qm.clone(project.getUuid(), "3.2.1", true, true, true, true, true, true, true, false);
+
+        bomBytes = """
+                {
+                  "bomFormat": "CycloneDX",
+                  "specVersion": "1.6",
+                  "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b80",
+                  "version": 1,
+                  "metadata": {
+                    "authors": [
+                      {
+                        "name": "bar",
+                        "email": "bar@example.com"
+                      }
+                    ]
+                  },
+                  "components": [
+                    {
+                      "type": "library",
+                      "name": "acme-lib-x"
+                    }
+                  ]
+                }
+                """.getBytes(StandardCharsets.UTF_8);
+
+        bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, clonedProject.getId()), bomBytes);
+        new BomUploadProcessingTask().inform(bomUploadEvent);
+        awaitBomProcessedNotification(bomUploadEvent);
+
+        qm.getPersistenceManager().evictAll();
+
+        assertThat(project.getMetadata().getAuthors()).satisfiesExactly(author -> {
+            assertThat(author.getName()).isEqualTo("foo");
+            assertThat(author.getEmail()).isEqualTo("foo@example.com");
+        });
+
+        assertThat(clonedProject.getMetadata().getAuthors()).satisfiesExactly(author -> {
+            assertThat(author.getName()).isEqualTo("bar");
+            assertThat(author.getEmail()).isEqualTo("bar@example.com");
+        });
+    }
+
+    @Test
+    public void informIssue3936Test() throws Exception{
+        final Project project = qm.createProject("Acme Example", null, "1.0", null, null, null, true, false);
+        List<String> boms = new ArrayList<>(Arrays.asList("/unit/bom-issue3936-authors.json", "/unit/bom-issue3936-author.json", "/unit/bom-issue3936-both.json"));
+        for(String bom : boms){
+          final var bomUploadEvent = new BomUploadEvent(qm.detach(Project.class, project.getId()),
+                  resourceToByteArray(bom));
+          new BomUploadProcessingTask().inform(bomUploadEvent);
+          awaitBomProcessedNotification(bomUploadEvent);
+
+          assertThat(qm.getAllComponents(project)).isNotEmpty();
+          Component component = qm.getAllComponents().getFirst();
+          assertThat(component.getAuthor()).isEqualTo("Joane Doe et al.");
+          assertThat(component.getAuthors().get(0).getName()).isEqualTo("Joane Doe et al.");
+          assertThat(component.getAuthors().size()).isEqualTo(1);
+        }
+    }
+
     private void awaitBomProcessedNotification(final BomUploadEvent bomUploadEvent) {
         try {
             await("BOM Processed Notification")
                     .atMost(Duration.ofSeconds(3))
                     .untilAsserted(() -> assertThat(NOTIFICATIONS)
                             .anyMatch(n -> NotificationGroup.BOM_PROCESSED.name().equals(n.getGroup())
-                                    && NotificationScope.PORTFOLIO.name().equals(n.getScope())));
+                                           && NotificationScope.PORTFOLIO.name().equals(n.getScope())));
         } catch (ConditionTimeoutException e) {
             final Optional<Notification> optionalNotification = NOTIFICATIONS.stream()
                     .filter(n -> NotificationGroup.BOM_PROCESSING_FAILED.name().equals(n.getGroup()))

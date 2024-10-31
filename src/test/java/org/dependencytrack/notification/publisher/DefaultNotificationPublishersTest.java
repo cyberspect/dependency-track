@@ -21,7 +21,7 @@ package org.dependencytrack.notification.publisher;
 import org.junit.Assert;
 import org.junit.Test;
 
-import javax.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MediaType;
 
 public class DefaultNotificationPublishersTest {
 
@@ -72,7 +72,7 @@ public class DefaultNotificationPublishersTest {
         Assert.assertEquals("Sends notifications to an email address", DefaultNotificationPublishers.EMAIL.getPublisherDescription());
         Assert.assertEquals(SendMailPublisher.class, DefaultNotificationPublishers.EMAIL.getPublisherClass());
         Assert.assertEquals("/templates/notification/publisher/email.peb", DefaultNotificationPublishers.EMAIL.getPublisherTemplateFile());
-        Assert.assertEquals(MediaType.TEXT_PLAIN, DefaultNotificationPublishers.EMAIL.getTemplateMimeType());
+        Assert.assertEquals("text/plain; charset=utf-8", DefaultNotificationPublishers.EMAIL.getTemplateMimeType());
         Assert.assertTrue(DefaultNotificationPublishers.EMAIL.isDefaultPublisher());
     }
 
