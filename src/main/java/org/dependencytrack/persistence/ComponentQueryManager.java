@@ -166,7 +166,7 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
                 " && !("+
                 " SELECT FROM org.dependencytrack.model.RepositoryMetaComponent m " +
                 " WHERE m.name == this.name " +
-                " && m.namespace == this.group " +
+                " && (m.namespace == this.group || (m.namespace == null && this.group == null)) " +
                 " && m.latestVersion != this.version " +
                 " && this.purl.matches('pkg:' + m.repositoryType.toString().toLowerCase() + '/%') " +
                 " ).isEmpty()";
@@ -370,6 +370,7 @@ final class ComponentQueryManager extends QueryManager implements IQueryManager 
         component.setCpe(sourceComponent.getCpe());
         component.setPurl(sourceComponent.getPurl());
         component.setPurlCoordinates(sourceComponent.getPurlCoordinates());
+        component.setSwidTagId(sourceComponent.getSwidTagId());
         component.setInternal(sourceComponent.isInternal());
         component.setDescription(sourceComponent.getDescription());
         component.setCopyright(sourceComponent.getCopyright());

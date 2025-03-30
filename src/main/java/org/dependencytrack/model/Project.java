@@ -34,7 +34,6 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import org.dependencytrack.parser.cyclonedx.util.ModelConverter;
 import org.dependencytrack.persistence.converter.OrganizationalContactsJsonConverter;
 import org.dependencytrack.persistence.converter.OrganizationalEntityJsonConverter;
@@ -115,6 +114,15 @@ import java.util.UUID;
         }),
         @FetchGroup(name = "PARENT", members = {
                 @Persistent(name = "parent")
+        }),
+        @FetchGroup(name = "PROJECT_TAGS", members = {
+                @Persistent(name = "tags")
+        }),
+        @FetchGroup(name = "PROJECT_VULN_ANALYSIS", members = {
+                @Persistent(name = "id"),
+                @Persistent(name = "name"),
+                @Persistent(name = "version"),
+                @Persistent(name = "uuid")
         })
 })
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -129,7 +137,9 @@ public class Project implements Serializable {
         ALL,
         METADATA,
         METRICS_UPDATE,
-        PARENT
+        PARENT,
+        PROJECT_TAGS,
+        PROJECT_VULN_ANALYSIS
     }
 
     @PrimaryKey
@@ -274,9 +284,9 @@ public class Project implements Serializable {
     private Double lastInheritedRiskScore;
 
     @Persistent
-    @Column(name = "ACTIVE")
+    @Column(name = "ACTIVE", defaultValue = "true")
     @JsonSerialize(nullsUsing = BooleanDefaultTrueSerializer.class)
-    private Boolean active; // Added in v3.6. Existing records need to be nullable on upgrade.
+    private boolean active = true;
 
     @Persistent
     @Index(name = "PROJECT_IS_LATEST_IDX")
@@ -518,11 +528,11 @@ public class Project implements Serializable {
         this.externalReferences = externalReferences;
     }
 
-    public Boolean isActive() {
+    public boolean isActive() {
         return active;
     }
 
-    public void setActive(Boolean active) {
+    public void setActive(boolean active) {
         this.active = active;
     }
 

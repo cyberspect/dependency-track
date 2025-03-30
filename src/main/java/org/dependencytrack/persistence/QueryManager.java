@@ -397,14 +397,6 @@ public class QueryManager extends AlpineQueryManager {
         return getProjectQueryManager().getProjects();
     }
 
-    public List<Project> getAllProjects() {
-        return getProjectQueryManager().getAllProjects();
-    }
-
-    public List<Project> getAllProjects(boolean excludeInactive) {
-        return getProjectQueryManager().getAllProjects(excludeInactive);
-    }
-
     public PaginatedResult getProjects(final String name, final boolean excludeInactive, final boolean onlyRoot, final Team notAssignedToTeam) {
         return getProjectQueryManager().getProjects(name, excludeInactive, onlyRoot, notAssignedToTeam);
     }
@@ -940,24 +932,17 @@ public class QueryManager extends AlpineQueryManager {
         return getVulnerableSoftwareQueryManager().getAllVulnerableSoftwareByCpe(cpeString);
     }
 
-    public VulnerableSoftware getVulnerableSoftwareByPurl(String purlType, String purlNamespace, String purlName,
-                                                          String versionEndExcluding, String versionEndIncluding,
-                                                          String versionStartExcluding, String versionStartIncluding) {
-        return getVulnerableSoftwareQueryManager().getVulnerableSoftwareByPurl(purlType, purlNamespace, purlName, versionEndExcluding, versionEndIncluding, versionStartExcluding, versionStartIncluding);
-    }
-
     public VulnerableSoftware getVulnerableSoftwareByPurl(
-            final String purl,
+            final String purlType,
+            final String purlNamespace,
+            final String purlName,
+            final String version,
             final String versionEndExcluding,
             final String versionEndIncluding,
             final String versionStartExcluding,
-            final String versionStartIncluding) {
+            String versionStartIncluding) {
         return getVulnerableSoftwareQueryManager().getVulnerableSoftwareByPurl(
-                purl,
-                versionEndExcluding,
-                versionEndIncluding,
-                versionStartExcluding,
-                versionStartIncluding);
+                purlType, purlNamespace, purlName, version, versionEndExcluding, versionEndIncluding, versionStartExcluding, versionStartIncluding);
     }
 
     public List<VulnerableSoftware> getVulnerableSoftwareByVulnId(final String source, final String vulnId) {
@@ -1339,12 +1324,24 @@ public class QueryManager extends AlpineQueryManager {
         getCacheQueryManager().clearComponentAnalysisCache(threshold);
     }
 
+    public boolean bind(final NotificationRule notificationRule, final Collection<Tag> tags, final boolean keepExisting) {
+        return getNotificationQueryManager().bind(notificationRule, tags, keepExisting);
+    }
+
     public boolean bind(final NotificationRule notificationRule, final Collection<Tag> tags) {
         return getNotificationQueryManager().bind(notificationRule, tags);
     }
 
+    public boolean bind(final Project project, final Collection<Tag> tags, final boolean keepExisting) {
+        return getProjectQueryManager().bind(project, tags, keepExisting);
+    }
+
     public void bind(Project project, List<Tag> tags) {
         getProjectQueryManager().bind(project, tags);
+    }
+
+    public boolean bind(final Policy policy, final Collection<Tag> tags, final boolean keepExisting) {
+        return getPolicyQueryManager().bind(policy, tags, keepExisting);
     }
 
     public boolean bind(final Policy policy, final Collection<Tag> tags) {
