@@ -24,7 +24,6 @@ import alpine.notification.NotificationService;
 import alpine.notification.Subscriber;
 import alpine.notification.Subscription;
 import alpine.security.crypto.DataEncryption;
-import com.github.packageurl.PackageURL;
 import com.github.tomakehurst.wiremock.http.Fault;
 import com.github.tomakehurst.wiremock.junit.WireMockRule;
 import com.google.protobuf.util.Timestamps;
@@ -37,6 +36,7 @@ import org.dependencytrack.model.ComponentAnalysisCache;
 import org.dependencytrack.model.Project;
 import org.dependencytrack.model.Severity;
 import org.dependencytrack.model.Vulnerability;
+import org.dependencytrack.model.VulnerabilityAnalysisLevel;
 import org.dependencytrack.notification.NotificationGroup;
 import org.dependencytrack.notification.NotificationScope;
 import org.junit.After;
@@ -51,9 +51,7 @@ import trivy.proto.common.PkgIdentifier;
 import trivy.proto.scanner.v1.Result;
 import trivy.proto.scanner.v1.ScanResponse;
 
-import jakarta.json.Json;
 import java.text.ParseException;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -149,22 +147,6 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
         }
 
         asserts.assertAll();
-    }
-
-    @Test
-    public void testShouldAnalyzeWhenCacheIsCurrent() throws Exception {
-        qm.updateComponentAnalysisCache(ComponentAnalysisCache.CacheType.VULNERABILITY, wireMock.baseUrl(),
-                Vulnerability.Source.TRIVY.name(), "pkg:maven/com.fasterxml.woodstox/woodstox-core@5.0.0", new Date(),
-                Json.createObjectBuilder()
-                        .add("vulnIds", Json.createArrayBuilder().add(123))
-                        .build());
-
-        assertThat(new TrivyAnalysisTask().shouldAnalyze(new PackageURL("pkg:maven/com.fasterxml.woodstox/woodstox-core@5.0.0?foo=bar#baz"))).isFalse();
-    }
-
-    @Test
-    public void testShouldAnalyzeWhenCacheIsNotCurrent() throws Exception {
-        assertThat(new TrivyAnalysisTask().shouldAnalyze(new PackageURL("pkg:maven/com.fasterxml.woodstox/woodstox-core@5.0.0?foo=bar#baz"))).isTrue();
     }
 
     @Test
@@ -278,7 +260,8 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
         component.setPurl("pkg:maven/com.fasterxml.woodstox/woodstox-core@5.0.0?foo=bar#baz");
         component = qm.createComponent(component, false);
 
-        new TrivyAnalysisTask().inform(new TrivyAnalysisEvent(component));
+        new TrivyAnalysisTask().inform(new TrivyAnalysisEvent(
+                List.of(component), VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS));
 
         final List<Vulnerability> vulnerabilities = qm.getAllVulnerabilities(component);
         assertThat(vulnerabilities).satisfiesExactly(vuln -> {
@@ -314,7 +297,7 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
             assertThat(vuln.getVulnerableSoftware()).isEmpty();
         });
 
-        assertThat(qm.getCount(ComponentAnalysisCache.class)).isOne();
+        assertThat(qm.getCount(ComponentAnalysisCache.class)).isZero();
 
         assertThat(NOTIFICATIONS).satisfiesExactly(
                 notification ->
@@ -379,7 +362,8 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
         component.setPurl("pkg:maven/com.fasterxml.woodstox/woodstox-core@5.0.0?foo=bar#baz");
         component = qm.createComponent(component, false);
 
-        new TrivyAnalysisTask().inform(new TrivyAnalysisEvent(component));
+        new TrivyAnalysisTask().inform(new TrivyAnalysisEvent(
+                List.of(component), VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS));
 
         final List<Vulnerability> vulnerabilities = qm.getAllVulnerabilities(component);
         assertThat(vulnerabilities).isEmpty();
@@ -414,7 +398,8 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
         component.setPurl("pkg:maven/com.fasterxml.woodstox/woodstox-core@5.0.0?foo=bar#baz");
         component = qm.createComponent(component, false);
 
-        new TrivyAnalysisTask().inform(new TrivyAnalysisEvent(List.of(component)));
+        new TrivyAnalysisTask().inform(new TrivyAnalysisEvent(
+                List.of(component), VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS));
 
         final List<Vulnerability> vulnerabilities = qm.getAllVulnerabilities(component);
         assertThat(vulnerabilities).hasSize(0);

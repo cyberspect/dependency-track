@@ -41,6 +41,7 @@ import org.dependencytrack.model.Analysis;
 import org.dependencytrack.model.AnalysisComment;
 import org.dependencytrack.model.Classifier;
 import org.dependencytrack.model.Component;
+import org.dependencytrack.model.ComponentProperty;
 import org.dependencytrack.model.ConfigPropertyConstants;
 import org.dependencytrack.model.FindingAttribution;
 import org.dependencytrack.model.PolicyViolation;
@@ -64,6 +65,7 @@ import javax.jdo.metadata.TypeMetadata;
 import java.io.IOException;
 import java.security.Principal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -72,6 +74,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+
+import static org.dependencytrack.util.PersistenceUtil.assertPersistent;
+import static org.dependencytrack.util.PersistenceUtil.assertPersistentAll;
 
 final class ProjectQueryManager extends QueryManager implements IQueryManager {
 
@@ -161,31 +166,6 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
     @Override
     public PaginatedResult getProjects() {
         return getProjects(false);
-    }
-
-    /**
-     * Returns a list of all projects.
-     * This method if designed NOT to provide paginated results.
-     * @return a List of Projects
-     */
-    @Override
-    public List<Project> getAllProjects() {
-        return getAllProjects(false);
-    }
-
-    /**
-     * Returns a list of all projects.
-     * This method if designed NOT to provide paginated results.
-     * @return a List of Projects
-     */
-    @Override
-    public List<Project> getAllProjects(boolean excludeInactive) {
-        final Query<Project> query = pm.newQuery(Project.class);
-        if (excludeInactive) {
-            query.setFilter("active == true || active == null");
-        }
-        query.setOrdering("id asc");
-        return query.executeList();
     }
 
     /**
@@ -473,9 +453,6 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
         if (project.getParent() != null && !Boolean.TRUE.equals(project.getParent().isActive())){
             throw new IllegalArgumentException("An inactive Parent cannot be selected as parent");
         }
-        if (project.isActive() == null) {
-            project.setActive(Boolean.TRUE);
-        }
         final Project oldLatestProject = project.isLatest() ? getLatestProjectVersion(project.getName()) : null;
         final Project result = callInTransaction(() -> {
             // Remove isLatest flag from current latest project version, if the new project will be the latest
@@ -687,6 +664,24 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
                 if (sourceComponents != null) {
                     for (final Component sourceComponent : sourceComponents) {
                         final Component clonedComponent = cloneComponent(sourceComponent, project, false);
+
+                        if (sourceComponent.getProperties() != null && !sourceComponent.getProperties().isEmpty()) {
+                            final var clonedProperties = new ArrayList<ComponentProperty>(sourceComponent.getProperties().size());
+                            for (final ComponentProperty sourceProperty : sourceComponent.getProperties()) {
+                                final ComponentProperty clonedProperty = new ComponentProperty();
+                                clonedProperty.setComponent(clonedComponent);
+                                clonedProperty.setPropertyType(sourceProperty.getPropertyType());
+                                clonedProperty.setGroupName(sourceProperty.getGroupName());
+                                clonedProperty.setPropertyName(sourceProperty.getPropertyName());
+                                clonedProperty.setPropertyValue(sourceProperty.getPropertyValue());
+                                clonedProperty.setDescription(sourceProperty.getDescription());
+                                clonedProperties.add(clonedProperty);
+                            }
+
+                            persist(clonedProperties);
+                            clonedComponent.setProperties(clonedProperties);
+                        }
+
                         // Add vulnerabilties and finding attribution from the source component to the cloned component
                         for (Vulnerability vuln : sourceComponent.getVulnerabilities()) {
                             final FindingAttribution sourceAttribution = this.getFindingAttribution(vuln, sourceComponent);
@@ -711,7 +706,19 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
                 String directDependencies = project.getDirectDependencies();
                 for (final UUID sourceComponentUuid : projectDirectDepsSourceComponentUuids) {
                     final UUID clonedComponentUuid = clonedComponentUuidBySourceComponentUuid.get(sourceComponentUuid);
-                    directDependencies = directDependencies.replace(sourceComponentUuid.toString(), clonedComponentUuid.toString());
+                    if (clonedComponentUuid != null) {
+                        directDependencies = directDependencies.replace(
+                                sourceComponentUuid.toString(), clonedComponentUuid.toString());
+                    } else {
+                        // NB: This may happen when the source project itself is a clone,
+                        // and it was cloned before DT v4.12.0.
+                        // https://github.com/DependencyTrack/dependency-track/pull/4171
+                        LOGGER.warn("""
+                                The source project's directDependencies refer to a component with UUID \
+                                %s, which does not exist in the project. The cloned project's dependency graph \
+                                may be broken as a result. A BOM upload will resolve the issue.\
+                                """.formatted(sourceComponentUuid));
+                    }
                 }
 
                 project.setDirectDependencies(directDependencies);
@@ -724,7 +731,16 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
                 String directDependencies = component.getDirectDependencies();
                 for (final UUID sourceComponentUuid : sourceComponentUuids) {
                     final UUID clonedComponentUuid = clonedComponentUuidBySourceComponentUuid.get(sourceComponentUuid);
-                    directDependencies = directDependencies.replace(sourceComponentUuid.toString(), clonedComponentUuid.toString());
+                    if (clonedComponentUuid != null) {
+                        directDependencies = directDependencies.replace(
+                                sourceComponentUuid.toString(), clonedComponentUuid.toString());
+                    } else {
+                        LOGGER.warn("""
+                                The directDependencies of component %s refer to a component with UUID \
+                                %s, which does not exist in the source project. The cloned project's dependency graph \
+                                may be broken as a result. A BOM upload will resolve the issue.\
+                                """.formatted(component, sourceComponentUuid));
+                    }
                 }
 
                 component.setDirectDependencies(directDependencies);
@@ -916,30 +932,58 @@ final class ProjectQueryManager extends QueryManager implements IQueryManager {
     }
 
     /**
+     * @since 4.12.3
+     */
+    @Override
+    public boolean bind(final Project project, final Collection<Tag> tags, final boolean keepExisting) {
+        assertPersistent(project, "project must be persistent");
+        assertPersistentAll(tags, "tags must be persistent");
+
+        return callInTransaction(() -> {
+            boolean modified = false;
+
+            if (project.getTags() == null) {
+                project.setTags(new ArrayList<>());
+            }
+
+            if (!keepExisting) {
+                for (final Tag existingTag : project.getTags()) {
+                    if (!tags.contains(existingTag)) {
+                        project.getTags().remove(existingTag);
+                        if (existingTag.getProjects() != null) {
+                            existingTag.getProjects().remove(project);
+                        }
+                        modified = true;
+                    }
+                }
+            }
+
+            for (final Tag tag : tags) {
+                if (!project.getTags().contains(tag)) {
+                    project.getTags().add(tag);
+
+                    if (tag.getProjects() == null) {
+                        tag.setProjects(new ArrayList<>(List.of(project)));
+                    } else if (!tag.getProjects().contains(project)) {
+                        tag.getProjects().add(project);
+                    }
+
+                    modified = true;
+                }
+            }
+
+            return modified;
+        });
+    }
+
+    /**
      * Binds the two objects together in a corresponding join table.
      * @param project a Project object
      * @param tags a List of Tag objects
      */
     @Override
-    public void bind(Project project, List<Tag> tags) {
-        runInTransaction(() -> {
-            final Query<Tag> query = pm.newQuery(Tag.class, "projects.contains(:project)");
-            query.setParameters(project);
-            final List<Tag> currentProjectTags = executeAndCloseList(query);
-
-            for (final Tag tag : currentProjectTags) {
-                if (!tags.contains(tag)) {
-                    tag.getProjects().remove(project);
-                }
-            }
-            project.setTags(tags);
-            for (final Tag tag : tags) {
-                final List<Project> projects = tag.getProjects();
-                if (!projects.contains(project)) {
-                    projects.add(project);
-                }
-            }
-        });
+    public void bind(final Project project, final List<Tag> tags) {
+        bind(project, tags, /* keepExisting */ false);
     }
 
     /**
