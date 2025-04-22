@@ -23,7 +23,6 @@ import alpine.common.util.SystemUtil;
 import alpine.event.framework.Event;
 import alpine.event.framework.Subscriber;
 import alpine.persistence.ScopedCustomization;
-import alpine.persistence.ScopedCustomization;
 import org.apache.commons.lang3.time.DurationFormatUtils;
 import org.dependencytrack.event.CallbackEvent;
 import org.dependencytrack.event.PortfolioMetricsUpdateEvent;
