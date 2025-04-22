@@ -173,12 +173,14 @@ public class VulnDbAnalysisTask extends BaseComponentAnalyzerTask implements Sub
     private boolean processResults(final Results results, final Component component) {
         try (final QueryManager qm = new QueryManager()) {
             final Component vulnerableComponent = qm.getObjectByUuid(Component.class, component.getUuid()); // Refresh component and attach to current pm.
-            for (org.dependencytrack.parser.vulndb.model.Vulnerability vulnDbVuln : (List<org.dependencytrack.parser.vulndb.model.Vulnerability>) results.getResults()) {
-                Vulnerability vulnerability = qm.getVulnerabilityByVulnId(Vulnerability.Source.VULNDB, String.valueOf(vulnDbVuln.id()));
+            for (org.dependencytrack.parser.vulndb.model.Vulnerability vulnDbVuln :
+                (List<org.dependencytrack.parser.vulndb.model.Vulnerability>) results.getResults()) {
+                // Synchronize the vulnerability, which may create, update, or return null
+                final Vulnerability convertedVuln = ModelConverter.convert(qm, vulnDbVuln);
+                Vulnerability vulnerability = qm.synchronizeVulnerability(convertedVuln, false);
                 if (vulnerability == null) {
-                    vulnerability = qm.createVulnerability(ModelConverter.convert(qm, vulnDbVuln), false);
-                } else {
-                    vulnerability = qm.synchronizeVulnerability(ModelConverter.convert(qm, vulnDbVuln), false);
+                    // Vulnerability already exists but is unchanged.
+                    vulnerability = qm.getVulnerabilityByVulnId(convertedVuln.getSource(), convertedVuln.getVulnId());
                 }
                 NotificationUtil.analyzeNotificationCriteria(qm, vulnerability, vulnerableComponent, vulnerabilityAnalysisLevel);
                 qm.addVulnerability(vulnerability, vulnerableComponent, this.getAnalyzerIdentity());
@@ -188,5 +190,4 @@ public class VulnDbAnalysisTask extends BaseComponentAnalyzerTask implements Sub
             return results.getPage() * PAGE_SIZE < results.getTotal();
         }
     }
-
 }

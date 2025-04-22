@@ -45,6 +45,7 @@ import org.dependencytrack.model.Component;
 import org.dependencytrack.model.ComponentIdentity;
 import org.dependencytrack.model.License;
 import org.dependencytrack.model.Project;
+import org.dependencytrack.model.ProjectCollectionLogic;
 import org.dependencytrack.model.RepositoryMetaComponent;
 import org.dependencytrack.model.RepositoryType;
 import org.dependencytrack.model.validation.ValidUuid;
@@ -317,6 +318,9 @@ public class ComponentResource extends AlpineResource {
             final Project project = qm.getObjectByUuid(Project.class, uuid);
             if (project == null) {
                 return Response.status(Response.Status.NOT_FOUND).entity("The project could not be found.").build();
+            }
+            if(!project.getCollectionLogic().equals(ProjectCollectionLogic.NONE)) {
+                return Response.status(Response.Status.BAD_REQUEST).entity("Collection project cannot contain components.").build();
             }
             if (! qm.hasAccess(super.getPrincipal(), project)) {
                 return Response.status(Response.Status.FORBIDDEN).entity("Access to the specified project is forbidden").build();

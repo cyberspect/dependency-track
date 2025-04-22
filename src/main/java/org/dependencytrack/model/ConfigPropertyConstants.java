@@ -18,9 +18,11 @@
  */
 package org.dependencytrack.model;
 
+import alpine.Config;
 import alpine.model.IConfigProperty;
 import alpine.model.IConfigProperty.PropertyType;
 import org.apache.commons.lang3.SystemUtils;
+import org.dependencytrack.common.ConfigKey;
 
 import java.util.Arrays;
 
@@ -54,7 +56,7 @@ public enum ConfigPropertyConstants {
     SCANNER_VULNDB_ENABLED("scanner", "vulndb.enabled", "false", PropertyType.BOOLEAN, "Flag to enable/disable VulnDB"),
     SCANNER_VULNDB_OAUTH1_CONSUMER_KEY("scanner", "vulndb.api.oauth1.consumerKey", null, PropertyType.STRING, "The OAuth 1.0a consumer key"),
     SCANNER_VULNDB_OAUTH1_CONSUMER_SECRET("scanner", "vulndb.api.oath1.consumerSecret", null, PropertyType.ENCRYPTEDSTRING, "The OAuth 1.0a consumer secret"),
-    SCANNER_ANALYSIS_CACHE_VALIDITY_PERIOD("scanner", "analysis.cache.validity.period","43200000", PropertyType.NUMBER, "Validity period for individual component analysis cache"),
+    SCANNER_ANALYSIS_CACHE_VALIDITY_PERIOD("scanner", "analysis.cache.validity.period","43200000", PropertyType.NUMBER, "Validity period for individual component vulnerability and metadats analysis cache"),
     SCANNER_SNYK_ENABLED("scanner", "snyk.enabled", "false", PropertyType.BOOLEAN, "Flag to enable/disable Snyk Vulnerability Analysis"),
     SCANNER_SNYK_ALIAS_SYNC_ENABLED("scanner", "snyk.alias.sync.enabled", "false", PropertyType.BOOLEAN, "Flag to enable/disable alias synchronization for Snyk"),
     SCANNER_SNYK_API_TOKEN("scanner", "snyk.api.token", null, PropertyType.ENCRYPTEDSTRING, "The API token used for Snyk API authentication"),
@@ -66,6 +68,8 @@ public enum ConfigPropertyConstants {
     SCANNER_TRIVY_API_TOKEN("scanner", "trivy.api.token", null, PropertyType.ENCRYPTEDSTRING, "The API token used for Trivy API authentication"),
     SCANNER_TRIVY_BASE_URL("scanner", "trivy.base.url", null, PropertyType.URL, "Base Url pointing to the hostname and path for Trivy analysis"),
     SCANNER_TRIVY_IGNORE_UNFIXED("scanner", "trivy.ignore.unfixed", "false", PropertyType.BOOLEAN, "Flag to ignore unfixed vulnerabilities"),
+    SCANNER_TRIVY_SCAN_LIBRARY("scanner", "trivy.scanner.scanLibrary", "true", PropertyType.BOOLEAN, "Flag to enable library scanning"),
+    SCANNER_TRIVY_SCAN_OS("scanner", "trivy.scanner.scanOs", "true", PropertyType.BOOLEAN, "Flag to enable os scanning"),
     VULNERABILITY_SOURCE_NVD_ENABLED("vuln-source", "nvd.enabled", "true", PropertyType.BOOLEAN, "Flag to enable/disable National Vulnerability Database"),
     VULNERABILITY_SOURCE_NVD_FEEDS_URL("vuln-source", "nvd.feeds.url", "https://nvd.nist.gov/feeds", PropertyType.URL, "A base URL pointing to the hostname and path of the NVD feeds"),
     VULNERABILITY_SOURCE_NVD_API_ENABLED("vuln-source", "nvd.api.enabled", "false", PropertyType.BOOLEAN, "Whether to enable NVD mirroring via REST API"),
@@ -111,16 +115,19 @@ public enum ConfigPropertyConstants {
     TASK_SCHEDULER_PORTFOLIO_VULNERABILITY_ANALYSIS_CADENCE("task-scheduler", "portfolio.vulnerability.analysis.cadence", "24", PropertyType.INTEGER, "Launch cadence (in hours) for portfolio vulnerability analysis"),
     TASK_SCHEDULER_REPOSITORY_METADATA_FETCH_CADENCE("task-scheduler", "repository.metadata.fetch.cadence", "24", PropertyType.INTEGER, "Metadada fetch cadence (in hours) for package repositories"),
     TASK_SCHEDULER_INTERNAL_COMPONENT_IDENTIFICATION_CADENCE("task-scheduler", "internal.components.identification.cadence", "6", PropertyType.INTEGER, "Internal component identification cadence (in hours)"),
-    TASK_SCHEDULER_COMPONENT_ANALYSIS_CACHE_CLEAR_CADENCE("task-scheduler", "component.analysis.cache.clear.cadence", "24", PropertyType.INTEGER, "Cleanup cadence (in hours) for component analysis cache"),
+    TASK_SCHEDULER_COMPONENT_ANALYSIS_CACHE_CLEAR_CADENCE("task-scheduler", "component.analysis.cache.clear.cadence", "24", PropertyType.INTEGER, "Cleanup cadence (in hours) for component vulnerability analysis cache"),
     SEARCH_INDEXES_CONSISTENCY_CHECK_ENABLED("search-indexes", "consistency.check.enabled", "true", PropertyType.BOOLEAN, "Flag to enable lucene indexes periodic consistency check"),
     SEARCH_INDEXES_CONSISTENCY_CHECK_CADENCE("search-indexes", "consistency.check.cadence", "4320", PropertyType.INTEGER, "Lucene indexes consistency check cadence (in minutes)"),
     SEARCH_INDEXES_CONSISTENCY_CHECK_DELTA_THRESHOLD("search-indexes", "consistency.check.delta.threshold", "20", PropertyType.INTEGER, "Threshold used to trigger an index rebuild when comparing database table and corresponding lucene index (in percentage). It must be an integer between 1 and 100"),
     BOM_VALIDATION_MODE("artifact", "bom.validation.mode", BomValidationMode.ENABLED.name(), PropertyType.STRING, "Flag to control the BOM validation mode"),
     BOM_VALIDATION_TAGS_INCLUSIVE("artifact", "bom.validation.tags.inclusive", "[]", PropertyType.STRING, "JSON array of tags for which BOM validation shall be performed"),
     BOM_VALIDATION_TAGS_EXCLUSIVE("artifact", "bom.validation.tags.exclusive", "[]", PropertyType.STRING, "JSON array of tags for which BOM validation shall NOT be performed"),
-    WELCOME_MESSAGE("general", "welcome.message.html", "%20%3Chtml%3E%3Ch1%3EYour%20Welcome%20Message%3C%2Fh1%3E%3C%2Fhtml%3E", PropertyType.STRING, "Custom HTML Code that is displayed before login", true),
-    IS_WELCOME_MESSAGE("general", "welcome.message.enabled", "false", PropertyType.BOOLEAN, "Bool that says wheter to show the welcome message or not", true),
-    DEFAULT_LANGUAGE("general", "default.locale", null, PropertyType.STRING, "Determine the default Language to use", true);
+    WELCOME_MESSAGE("general", "welcome.message.html", "%3Chtml%3E%3Ch1%3EYour%20Welcome%20Message%3C%2Fh1%3E%3C%2Fhtml%3E", PropertyType.STRING, "Custom HTML Code that is displayed before login", true),
+    IS_WELCOME_MESSAGE("general", "welcome.message.enabled", "false", PropertyType.BOOLEAN, "Bool that says whether to show the welcome message or not", true),
+    DEFAULT_LANGUAGE("general", "default.locale", null, PropertyType.STRING, "Determine the default Language to use", true),
+    TELEMETRY_SUBMISSION_ENABLED("telemetry", "submission.enabled", String.valueOf(!"true".equals(System.getProperty("dev.mode.enabled")) && Config.getInstance().getPropertyAsBoolean(ConfigKey.TELEMETRY_SUBMISSION_ENABLED_DEFAULT)), PropertyType.BOOLEAN, "Whether submission of telemetry data is enabled"),
+    TELEMETRY_LAST_SUBMISSION_DATA("telemetry", "last.submission.data", null, PropertyType.STRING, "Data of the last telemetry submission"),
+    TELEMETRY_LAST_SUBMISSION_EPOCH_SECONDS("telemetry", "last.submission.epoch.seconds", null, PropertyType.INTEGER, "Timestamp of the last telemetry submission in epoch seconds");
 
     private final String groupName;
     private final String propertyName;
@@ -128,7 +135,6 @@ public enum ConfigPropertyConstants {
     private final PropertyType propertyType;
     private final String description;
     private final Boolean isPublic;
-
 
 	ConfigPropertyConstants(String groupName, String propertyName, String defaultPropertyValue, PropertyType propertyType, String description) {
         this.groupName = groupName;
@@ -138,7 +144,7 @@ public enum ConfigPropertyConstants {
         this.description = description;
         this.isPublic = false;
     }
-    
+
     ConfigPropertyConstants(String groupName, String propertyName, String defaultPropertyValue, PropertyType propertyType, String description, Boolean isPublic) {
         this.groupName = groupName;
         this.propertyName = propertyName;

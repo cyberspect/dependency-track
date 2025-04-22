@@ -109,7 +109,19 @@ import java.util.UUID;
         }),
         @FetchGroup(name = "METRICS_UPDATE", members = {
                 @Persistent(name = "id"),
+                @Persistent(name = "parent"),
+                @Persistent(name = "collectionLogic"),
+                @Persistent(name = "collectionTag"),
                 @Persistent(name = "lastInheritedRiskScore"),
+                @Persistent(name = "uuid")
+        }),
+        @FetchGroup(name = "NOTIFICATION", members = {
+                @Persistent(name = "id"),
+                @Persistent(name = "name"),
+                @Persistent(name = "version"),
+                @Persistent(name = "description"),
+                @Persistent(name = "purl"),
+                @Persistent(name = "tags"),
                 @Persistent(name = "uuid")
         }),
         @FetchGroup(name = "PARENT", members = {
@@ -117,6 +129,11 @@ import java.util.UUID;
         }),
         @FetchGroup(name = "PROJECT_TAGS", members = {
                 @Persistent(name = "tags")
+        }),
+        @FetchGroup(name = "PORTFOLIO_METRICS_UPDATE", members = {
+                @Persistent(name = "id"),
+                @Persistent(name = "lastInheritedRiskScore"),
+                @Persistent(name = "uuid")
         }),
         @FetchGroup(name = "PROJECT_VULN_ANALYSIS", members = {
                 @Persistent(name = "id"),
@@ -137,7 +154,9 @@ public class Project implements Serializable {
         ALL,
         METADATA,
         METRICS_UPDATE,
+        NOTIFICATION,
         PARENT,
+        PORTFOLIO_METRICS_UPDATE,
         PROJECT_TAGS,
         PROJECT_VULN_ANALYSIS
     }
@@ -204,6 +223,15 @@ public class Project implements Serializable {
     @Index(name = "PROJECT_CLASSIFIER_IDX")
     @Extension(vendorName = "datanucleus", key = "enum-check-constraint", value = "true")
     private Classifier classifier;
+
+    @Persistent
+    @Column(name = "COLLECTION_LOGIC", jdbcType = "VARCHAR", allowsNull = "true")
+    @Extension(vendorName = "datanucleus", key = "enum-check-constraint", value = "true")
+    private ProjectCollectionLogic collectionLogic;
+
+    @Persistent(defaultFetchGroup = "true")
+    @Column(name = "COLLECTION_TAG", allowsNull = "true")
+    private Tag collectionTag;
 
     @Persistent
     @Index(name = "PROJECT_CPE_IDX")
@@ -282,6 +310,14 @@ public class Project implements Serializable {
     @Index(name = "PROJECT_LAST_RISKSCORE_IDX")
     @Column(name = "LAST_RISKSCORE", allowsNull = "true") // New column, must allow nulls on existing databases))
     private Double lastInheritedRiskScore;
+
+    /**
+     * Convenience field which will contain the date of the last vulnerability analysis of the {@link Bom} components
+     */
+    @Persistent
+    @Column(name = "LAST_VULNERABILITY_ANALYSIS", allowsNull = "true")
+    @Schema(type = "integer", format = "int64", requiredMode = Schema.RequiredMode.NOT_REQUIRED, description = "UNIX epoch timestamp in milliseconds")
+    private Date lastVulnerabilityAnalysis;
 
     @Persistent
     @Column(name = "ACTIVE", defaultValue = "true")
@@ -411,6 +447,26 @@ public class Project implements Serializable {
         this.classifier = classifier;
     }
 
+    public ProjectCollectionLogic getCollectionLogic() {
+        return collectionLogic == null
+                ? ProjectCollectionLogic.NONE
+                : collectionLogic;
+    }
+
+    public void setCollectionLogic(ProjectCollectionLogic collectionLogic) {
+        this.collectionLogic = collectionLogic != ProjectCollectionLogic.NONE
+                ? collectionLogic
+                : null;
+    }
+
+    public Tag getCollectionTag() {
+        return collectionTag;
+    }
+
+    public void setCollectionTag(Tag collectionTag) {
+        this.collectionTag = collectionTag;
+    }
+
     public String getCpe() {
         return cpe;
     }
@@ -510,6 +566,14 @@ public class Project implements Serializable {
 
     public void setLastBomImportFormat(String lastBomImportFormat) {
         this.lastBomImportFormat = lastBomImportFormat;
+    }
+
+    public Date getLastVulnerabilityAnalysis() {
+        return lastVulnerabilityAnalysis;
+    }
+
+    public void setLastVulnerabilityAnalysis(Date lastVulnerabilityAnalysis) {
+        this.lastVulnerabilityAnalysis = lastVulnerabilityAnalysis;
     }
 
     public Double getLastInheritedRiskScore() {

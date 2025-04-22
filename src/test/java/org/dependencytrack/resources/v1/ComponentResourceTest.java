@@ -26,10 +26,12 @@ import com.github.packageurl.PackageURL;
 import org.apache.http.HttpStatus;
 import org.dependencytrack.JerseyTestRule;
 import org.dependencytrack.ResourceTest;
+import org.dependencytrack.model.Classifier;
 import org.dependencytrack.model.Component;
 import org.dependencytrack.model.ConfigPropertyConstants;
 import org.dependencytrack.model.ExternalReference;
 import org.dependencytrack.model.Project;
+import org.dependencytrack.model.ProjectCollectionLogic;
 import org.dependencytrack.model.RepositoryMetaComponent;
 import org.dependencytrack.model.RepositoryType;
 import org.glassfish.jersey.server.ResourceConfig;
@@ -586,6 +588,7 @@ public class ComponentResourceTest extends ResourceTest {
         component.setName("My Component");
         component.setVersion("1.0");
         component.setAuthor("SampleAuthor");
+        component.setClassifier(Classifier.APPLICATION);
         Response response = jersey.target(V1_COMPONENT + "/project/" + project.getUuid().toString()).request()
                 .header(X_API_KEY, apiKey)
                 .put(Entity.entity(component, MediaType.APPLICATION_JSON));
@@ -596,6 +599,7 @@ public class ComponentResourceTest extends ResourceTest {
         Assert.assertEquals("SampleAuthor" ,json.getJsonArray("authors").getJsonObject(0).getString("name"));
         Assert.assertEquals("SampleAuthor", json.getString("author"));
         Assert.assertEquals("1.0", json.getString("version"));
+        Assert.assertEquals("APPLICATION", json.getString("classifier"));
         Assert.assertTrue(UuidUtil.isValidUUID(json.getString("uuid")));
     }
 
@@ -606,6 +610,7 @@ public class ComponentResourceTest extends ResourceTest {
         component.setProject(project);
         component.setName("My Component");
         component.setVersion("1.0");
+        component.setClassifier(Classifier.APPLICATION);
         component.setSha1("640ab2bae07bedc4c163f679a746f7ab7fb5d1fa".toUpperCase());
         component.setSha256("532eaabd9574880dbf76b9b8cc00832c20a6ec113d682299550d7a6e0f345e25".toUpperCase());
         component.setSha3_256("c0a5cca43b8aa79eb50e3464bc839dd6fd414fae0ddf928ca23dcebf8a8b8dd0".toUpperCase());
@@ -622,6 +627,7 @@ public class ComponentResourceTest extends ResourceTest {
         Assert.assertNotNull(json);
         Assert.assertEquals("My Component", json.getString("name"));
         Assert.assertEquals("1.0", json.getString("version"));
+        Assert.assertEquals("APPLICATION", json.getString("classifier"));
         Assert.assertTrue(UuidUtil.isValidUUID(json.getString("uuid")));
         Assert.assertEquals(component.getSha1(), json.getString("sha1"));
         Assert.assertEquals(component.getSha256(), json.getString("sha256"));
@@ -631,6 +637,23 @@ public class ComponentResourceTest extends ResourceTest {
         Assert.assertEquals(component.getSha512(), json.getString("sha512"));
         Assert.assertEquals(component.getSha3_512(), json.getString("sha3_512"));
         Assert.assertEquals(component.getMd5(), json.getString("md5"));
+    }
+
+    @Test
+    public void createComponentCollectionProjectTest() {
+        Project project = qm.createProject("Acme Application", null, null, null, null, null, true, false);
+        // make project a collection project
+        project.setCollectionLogic(ProjectCollectionLogic.AGGREGATE_DIRECT_CHILDREN);
+        qm.updateProject(project, false);
+
+        Component component = new Component();
+        component.setProject(project);
+        component.setName("My Component");
+        component.setVersion("1.0");
+        Response response = jersey.target(V1_COMPONENT + "/project/" + project.getUuid().toString()).request()
+                .header(X_API_KEY, apiKey)
+                .put(Entity.entity(component, MediaType.APPLICATION_JSON));
+        Assert.assertEquals(400, response.getStatus(), 0);
     }
 
     @Test
@@ -652,6 +675,7 @@ public class ComponentResourceTest extends ResourceTest {
         externalReference.setType(org.cyclonedx.model.ExternalReference.Type.WEBSITE);
         externalReference.setUrl("test.com");
         jsonComponent.setExternalReferences(List.of(externalReference));
+        jsonComponent.setClassifier(Classifier.APPLICATION);
 
         Response response = jersey.target(V1_COMPONENT).request()
                 .header(X_API_KEY, apiKey)
@@ -704,6 +728,7 @@ public class ComponentResourceTest extends ResourceTest {
                           "uuid": "%s",
                           "name": "acme-lib",
                           "version": "1.0.0",
+                          "classifier":"APPLICATION",
                           "licenseExpression": "(invalid"
                         }
                         """.formatted(component.getUuid()), MediaType.APPLICATION_JSON_TYPE));
