@@ -256,7 +256,6 @@ public class FindingsQueryManager extends QueryManager implements IQueryManager 
      * @param project the project to retrieve findings for
      * @return a List of Finding objects
      */
-    @SuppressWarnings("unchecked")
     public List<Finding> getFindings(Project project) {
         return getFindings(project, false);
     }
@@ -328,8 +327,10 @@ public class FindingsQueryManager extends QueryManager implements IQueryManager 
                 .forEach(metaComponent -> {
                     final var search = new RepositoryMetaComponentSearch(metaComponent.getRepositoryType(), metaComponent.getNamespace(), metaComponent.getName());
                     final List<Finding> affectedFindings = findingsByMetaComponentSearch.get(search);
-                    for (final Finding finding : affectedFindings) {
-                        finding.getComponent().put("latestVersion", metaComponent.getLatestVersion());
+                    if (affectedFindings != null) {
+                        for (final Finding finding : affectedFindings) {
+                            finding.getComponent().put("latestVersion", metaComponent.getLatestVersion());
+                        }
                     }
                 });
 

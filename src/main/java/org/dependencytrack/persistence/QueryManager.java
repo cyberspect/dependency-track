@@ -34,7 +34,6 @@ import alpine.server.util.DbUtil;
 import com.github.packageurl.PackageURL;
 import com.google.common.collect.Lists;
 import org.apache.commons.lang3.ClassUtils;
-import org.datanucleus.PropertyNames;
 import org.datanucleus.api.jdo.JDOQuery;
 import org.dependencytrack.event.IndexEvent;
 import org.dependencytrack.model.AffectedVersionAttribution;
@@ -57,6 +56,7 @@ import org.dependencytrack.model.License;
 import org.dependencytrack.model.LicenseGroup;
 import org.dependencytrack.model.NotificationPublisher;
 import org.dependencytrack.model.NotificationRule;
+import org.dependencytrack.model.NotificationTriggerType;
 import org.dependencytrack.model.Policy;
 import org.dependencytrack.model.PolicyCondition;
 import org.dependencytrack.model.PolicyViolation;
@@ -343,22 +343,6 @@ public class QueryManager extends AlpineQueryManager {
     }
 
     /**
-     * Disables the second level cache for this {@link QueryManager} instance.
-     * <p>
-     * Disabling the L2 cache is useful in situations where large amounts of objects
-     * are created or updated in close succession, and it's unlikely that they'll be
-     * accessed again anytime soon. Keeping those objects in cache would unnecessarily
-     * blow up heap usage.
-     *
-     * @return This {@link QueryManager} instance
-     * @see <a href="https://www.datanucleus.org/products/accessplatform_6_0/jdo/persistence.html#cache_level2">L2 Cache docs</a>
-     */
-    public QueryManager withL2CacheDisabled() {
-        pm.setProperty(PropertyNames.PROPERTY_CACHE_L2_TYPE, "none");
-        return this;
-    }
-
-    /**
      * Get the IDs of the {@link Team}s a given {@link Principal} is a member of.
      *
      * @return A {@link Set} of {@link Team} IDs
@@ -395,14 +379,6 @@ public class QueryManager extends AlpineQueryManager {
 
     public PaginatedResult getProjects() {
         return getProjectQueryManager().getProjects();
-    }
-
-    public List<Project> getAllProjects() {
-        return getProjectQueryManager().getAllProjects();
-    }
-
-    public List<Project> getAllProjects(boolean excludeInactive) {
-        return getProjectQueryManager().getAllProjects(excludeInactive);
     }
 
     public PaginatedResult getProjects(final String name, final boolean excludeInactive, final boolean onlyRoot, final Team notAssignedToTeam) {
@@ -518,6 +494,10 @@ public class QueryManager extends AlpineQueryManager {
 
     public void recursivelyDelete(final Project project, final boolean commitIndex) {
         getProjectQueryManager().recursivelyDelete(project, commitIndex);
+    }
+
+    public void deleteProjectsByUUIDs(Collection<UUID> uuids) {
+        getProjectQueryManager().deleteProjectsByUUIDs(uuids);
     }
 
     public ProjectProperty createProjectProperty(final Project project, final String groupName, final String propertyName,
@@ -940,24 +920,17 @@ public class QueryManager extends AlpineQueryManager {
         return getVulnerableSoftwareQueryManager().getAllVulnerableSoftwareByCpe(cpeString);
     }
 
-    public VulnerableSoftware getVulnerableSoftwareByPurl(String purlType, String purlNamespace, String purlName,
-                                                          String versionEndExcluding, String versionEndIncluding,
-                                                          String versionStartExcluding, String versionStartIncluding) {
-        return getVulnerableSoftwareQueryManager().getVulnerableSoftwareByPurl(purlType, purlNamespace, purlName, versionEndExcluding, versionEndIncluding, versionStartExcluding, versionStartIncluding);
-    }
-
     public VulnerableSoftware getVulnerableSoftwareByPurl(
-            final String purl,
+            final String purlType,
+            final String purlNamespace,
+            final String purlName,
+            final String version,
             final String versionEndExcluding,
             final String versionEndIncluding,
             final String versionStartExcluding,
-            final String versionStartIncluding) {
+            String versionStartIncluding) {
         return getVulnerableSoftwareQueryManager().getVulnerableSoftwareByPurl(
-                purl,
-                versionEndExcluding,
-                versionEndIncluding,
-                versionStartExcluding,
-                versionStartIncluding);
+                purlType, purlNamespace, purlName, version, versionEndExcluding, versionEndIncluding, versionStartExcluding, versionStartIncluding);
     }
 
     public List<VulnerableSoftware> getVulnerableSoftwareByVulnId(final String source, final String vulnId) {
@@ -972,24 +945,12 @@ public class QueryManager extends AlpineQueryManager {
         return getVulnerableSoftwareQueryManager().getAllVulnerableSoftware(cpePart, cpeVendor, cpeProduct, purl);
     }
 
-    public Component matchSingleIdentityExact(final Project project, final ComponentIdentity cid) {
-        return getComponentQueryManager().matchSingleIdentityExact(project, cid);
-    }
-
-    public Component matchFirstIdentityExact(final Project project, final ComponentIdentity cid) {
-        return getComponentQueryManager().matchFirstIdentityExact(project, cid);
-    }
-
     public List<Component> matchIdentity(final Project project, final ComponentIdentity cid) {
         return getComponentQueryManager().matchIdentity(project, cid);
     }
 
     public List<Component> matchIdentity(final ComponentIdentity cid) {
         return getComponentQueryManager().matchIdentity(cid);
-    }
-
-    public void reconcileComponents(Project project, List<Component> existingProjectComponents, List<Component> components) {
-        getComponentQueryManager().reconcileComponents(project, existingProjectComponents, components);
     }
 
     public List<Component> getAllComponents(Project project) {
@@ -1004,12 +965,12 @@ public class QueryManager extends AlpineQueryManager {
         return getComponentQueryManager().getComponents(project, includeMetrics, onlyOutdated, onlyDirect);
     }
 
-    public ServiceComponent matchServiceIdentity(final Project project, final ComponentIdentity cid) {
-        return getServiceComponentQueryManager().matchServiceIdentity(project, cid);
+    public boolean hasComponents(final Project project) {
+        return getComponentQueryManager().hasComponents(project);
     }
 
-    public void reconcileServiceComponents(Project project, List<ServiceComponent> existingProjectServices, List<ServiceComponent> services) {
-        getServiceComponentQueryManager().reconcileServiceComponents(project, existingProjectServices, services);
+    public ServiceComponent matchServiceIdentity(final Project project, final ComponentIdentity cid) {
+        return getServiceComponentQueryManager().matchServiceIdentity(project, cid);
     }
 
     public ServiceComponent createServiceComponent(ServiceComponent service, boolean commitIndex) {
@@ -1042,6 +1003,10 @@ public class QueryManager extends AlpineQueryManager {
 
     public ServiceComponent updateServiceComponent(ServiceComponent transientServiceComponent, boolean commitIndex) {
         return getServiceComponentQueryManager().updateServiceComponent(transientServiceComponent, commitIndex);
+    }
+
+    public boolean hasServiceComponents(final Project project) {
+        return getServiceComponentQueryManager().hasServiceComponents(project);
     }
 
     public void recursivelyDelete(ServiceComponent service, boolean commitIndex) {
@@ -1262,12 +1227,40 @@ public class QueryManager extends AlpineQueryManager {
         return getNotificationQueryManager().createNotificationRule(name, scope, level, publisher);
     }
 
+    public NotificationRule createScheduledNotificationRule(
+            final String name,
+            final NotificationScope scope,
+            final NotificationLevel level,
+            final NotificationPublisher publisher) {
+        return getNotificationQueryManager().createScheduledNotificationRule(name, scope, level, publisher);
+    }
+
     public NotificationRule updateNotificationRule(NotificationRule transientRule) {
         return getNotificationQueryManager().updateNotificationRule(transientRule);
     }
 
-    public PaginatedResult getNotificationRules() {
-        return getNotificationQueryManager().getNotificationRules();
+    public PaginatedResult getNotificationRules(final NotificationTriggerType triggerTypeFilter) {
+        return getNotificationQueryManager().getNotificationRules(triggerTypeFilter);
+    }
+
+    public List<NotificationRule> getDueScheduledNotificationRules() {
+        return getNotificationQueryManager().getDueScheduledNotificationRules();
+    }
+
+    public List<Project> getProjectsForNotificationById(final Collection<Long> ids) {
+        return getNotificationQueryManager().getProjectsForNotificationById(ids);
+    }
+
+    public List<Component> getComponentsForNotificationById(final Collection<Long> ids) {
+        return getNotificationQueryManager().getComponentsForNotificationById(ids);
+    }
+
+    public List<PolicyCondition> getPolicyConditionsForNotificationById(final Collection<Long> ids) {
+        return getNotificationQueryManager().getPolicyConditionsForNotificationById(ids);
+    }
+
+    public List<Vulnerability> getVulnerabilitiesForNotificationById(final Collection<Long> ids) {
+        return getNotificationQueryManager().getVulnerabilitiesForNotificationById(ids);
     }
 
     public List<NotificationPublisher> getAllNotificationPublishers() {
@@ -1339,12 +1332,24 @@ public class QueryManager extends AlpineQueryManager {
         getCacheQueryManager().clearComponentAnalysisCache(threshold);
     }
 
+    public boolean bind(final NotificationRule notificationRule, final Collection<Tag> tags, final boolean keepExisting) {
+        return getNotificationQueryManager().bind(notificationRule, tags, keepExisting);
+    }
+
     public boolean bind(final NotificationRule notificationRule, final Collection<Tag> tags) {
         return getNotificationQueryManager().bind(notificationRule, tags);
     }
 
+    public boolean bind(final Project project, final Collection<Tag> tags, final boolean keepExisting) {
+        return getProjectQueryManager().bind(project, tags, keepExisting);
+    }
+
     public void bind(Project project, List<Tag> tags) {
         getProjectQueryManager().bind(project, tags);
+    }
+
+    public boolean bind(final Policy policy, final Collection<Tag> tags, final boolean keepExisting) {
+        return getPolicyQueryManager().bind(policy, tags, keepExisting);
     }
 
     public boolean bind(final Policy policy, final Collection<Tag> tags) {

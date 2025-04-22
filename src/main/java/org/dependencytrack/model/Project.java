@@ -34,7 +34,6 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
 import io.swagger.v3.oas.annotations.media.Schema;
-
 import org.dependencytrack.parser.cyclonedx.util.ModelConverter;
 import org.dependencytrack.persistence.converter.OrganizationalContactsJsonConverter;
 import org.dependencytrack.persistence.converter.OrganizationalEntityJsonConverter;
@@ -110,11 +109,37 @@ import java.util.UUID;
         }),
         @FetchGroup(name = "METRICS_UPDATE", members = {
                 @Persistent(name = "id"),
+                @Persistent(name = "parent"),
+                @Persistent(name = "collectionLogic"),
+                @Persistent(name = "collectionTag"),
                 @Persistent(name = "lastInheritedRiskScore"),
+                @Persistent(name = "uuid")
+        }),
+        @FetchGroup(name = "NOTIFICATION", members = {
+                @Persistent(name = "id"),
+                @Persistent(name = "name"),
+                @Persistent(name = "version"),
+                @Persistent(name = "description"),
+                @Persistent(name = "purl"),
+                @Persistent(name = "tags"),
                 @Persistent(name = "uuid")
         }),
         @FetchGroup(name = "PARENT", members = {
                 @Persistent(name = "parent")
+        }),
+        @FetchGroup(name = "PROJECT_TAGS", members = {
+                @Persistent(name = "tags")
+        }),
+        @FetchGroup(name = "PORTFOLIO_METRICS_UPDATE", members = {
+                @Persistent(name = "id"),
+                @Persistent(name = "lastInheritedRiskScore"),
+                @Persistent(name = "uuid")
+        }),
+        @FetchGroup(name = "PROJECT_VULN_ANALYSIS", members = {
+                @Persistent(name = "id"),
+                @Persistent(name = "name"),
+                @Persistent(name = "version"),
+                @Persistent(name = "uuid")
         })
 })
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -129,7 +154,11 @@ public class Project implements Serializable {
         ALL,
         METADATA,
         METRICS_UPDATE,
-        PARENT
+        NOTIFICATION,
+        PARENT,
+        PORTFOLIO_METRICS_UPDATE,
+        PROJECT_TAGS,
+        PROJECT_VULN_ANALYSIS
     }
 
     @PrimaryKey
@@ -194,6 +223,15 @@ public class Project implements Serializable {
     @Index(name = "PROJECT_CLASSIFIER_IDX")
     @Extension(vendorName = "datanucleus", key = "enum-check-constraint", value = "true")
     private Classifier classifier;
+
+    @Persistent
+    @Column(name = "COLLECTION_LOGIC", jdbcType = "VARCHAR", allowsNull = "true")
+    @Extension(vendorName = "datanucleus", key = "enum-check-constraint", value = "true")
+    private ProjectCollectionLogic collectionLogic;
+
+    @Persistent(defaultFetchGroup = "true")
+    @Column(name = "COLLECTION_TAG", allowsNull = "true")
+    private Tag collectionTag;
 
     @Persistent
     @Index(name = "PROJECT_CPE_IDX")
@@ -273,10 +311,18 @@ public class Project implements Serializable {
     @Column(name = "LAST_RISKSCORE", allowsNull = "true") // New column, must allow nulls on existing databases))
     private Double lastInheritedRiskScore;
 
+    /**
+     * Convenience field which will contain the date of the last vulnerability analysis of the {@link Bom} components
+     */
     @Persistent
-    @Column(name = "ACTIVE")
+    @Column(name = "LAST_VULNERABILITY_ANALYSIS", allowsNull = "true")
+    @Schema(type = "integer", format = "int64", requiredMode = Schema.RequiredMode.NOT_REQUIRED, description = "UNIX epoch timestamp in milliseconds")
+    private Date lastVulnerabilityAnalysis;
+
+    @Persistent
+    @Column(name = "ACTIVE", defaultValue = "true")
     @JsonSerialize(nullsUsing = BooleanDefaultTrueSerializer.class)
-    private Boolean active; // Added in v3.6. Existing records need to be nullable on upgrade.
+    private boolean active = true;
 
     @Persistent
     @Index(name = "PROJECT_IS_LATEST_IDX")
@@ -401,6 +447,26 @@ public class Project implements Serializable {
         this.classifier = classifier;
     }
 
+    public ProjectCollectionLogic getCollectionLogic() {
+        return collectionLogic == null
+                ? ProjectCollectionLogic.NONE
+                : collectionLogic;
+    }
+
+    public void setCollectionLogic(ProjectCollectionLogic collectionLogic) {
+        this.collectionLogic = collectionLogic != ProjectCollectionLogic.NONE
+                ? collectionLogic
+                : null;
+    }
+
+    public Tag getCollectionTag() {
+        return collectionTag;
+    }
+
+    public void setCollectionTag(Tag collectionTag) {
+        this.collectionTag = collectionTag;
+    }
+
     public String getCpe() {
         return cpe;
     }
@@ -502,6 +568,14 @@ public class Project implements Serializable {
         this.lastBomImportFormat = lastBomImportFormat;
     }
 
+    public Date getLastVulnerabilityAnalysis() {
+        return lastVulnerabilityAnalysis;
+    }
+
+    public void setLastVulnerabilityAnalysis(Date lastVulnerabilityAnalysis) {
+        this.lastVulnerabilityAnalysis = lastVulnerabilityAnalysis;
+    }
+
     public Double getLastInheritedRiskScore() {
         return lastInheritedRiskScore;
     }
@@ -518,11 +592,11 @@ public class Project implements Serializable {
         this.externalReferences = externalReferences;
     }
 
-    public Boolean isActive() {
+    public boolean isActive() {
         return active;
     }
 
-    public void setActive(Boolean active) {
+    public void setActive(boolean active) {
         this.active = active;
     }
 

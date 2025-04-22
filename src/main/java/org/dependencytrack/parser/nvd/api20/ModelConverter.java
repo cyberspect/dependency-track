@@ -179,6 +179,7 @@ public final class ModelConverter {
         final List<CpeMatch> cpeMatches = extractCpeMatches(cveId, configurations);
         return cpeMatches.stream()
                 .map(cpeMatch -> convertCpeMatch(cveId, cpeMatch))
+                .filter(Objects::nonNull)
                 .filter(distinctIgnoringDatastoreIdentity())
                 .collect(Collectors.toList());
     }
@@ -238,7 +239,7 @@ public final class ModelConverter {
         // is a good example of this as it contains application CPEs describing various versions
         // of Adobe Flash player, but also contains CPEs for all versions of Windows, macOS, and
         // Linux.
-        if (node.getOperator() != Node.Operator.AND) {
+        if (node.getOperator() == Node.Operator.AND) {
             // Re-group `CpeMatch`es by CPE part to determine which are against applications,
             // and which against operating systems. When matches are present for both of them,
             // only use the ones for applications.
@@ -283,10 +284,10 @@ public final class ModelConverter {
 
             return vs;
         } catch (CpeParsingException e) {
-            LOGGER.warn("Failed to parse CPE %s of %s; Skipping".formatted(cpeMatch.getCriteria(), cveId));
+            LOGGER.warn("Failed to parse CPE %s of %s; Skipping".formatted(cpeMatch.getCriteria(), cveId), e);
             return null;
         } catch (CpeEncodingException e) {
-            LOGGER.warn("Failed to encode CPE %s of %s; Skipping".formatted(cpeMatch.getCriteria(), cveId));
+            LOGGER.warn("Failed to encode CPE %s of %s; Skipping".formatted(cpeMatch.getCriteria(), cveId), e);
             return null;
         }
     }
