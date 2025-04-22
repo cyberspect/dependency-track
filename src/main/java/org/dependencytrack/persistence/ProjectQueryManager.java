@@ -87,6 +87,9 @@ import static org.datanucleus.PropertyNames.PROPERTY_QUERY_SQL_ALLOWALL;
 import static org.dependencytrack.util.PersistenceUtil.assertPersistent;
 import static org.dependencytrack.util.PersistenceUtil.assertPersistentAll;
 
+import static org.dependencytrack.util.PersistenceUtil.assertPersistent;
+import static org.dependencytrack.util.PersistenceUtil.assertPersistentAll;
+
 final class ProjectQueryManager extends QueryManager implements IQueryManager {
 
     private static final Logger LOGGER = Logger.getLogger(ProjectQueryManager.class);
