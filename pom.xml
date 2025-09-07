@@ -31,7 +31,7 @@
     <groupId>org.dependencytrack</groupId>
     <artifactId>dependency-track</artifactId>
     <packaging>war</packaging>
-    <version>4.13.2</version>
+    <version>4.13.4</version>
 
     <name>Dependency-Track</name>
     <url>https://dependencytrack.org/</url>
@@ -85,7 +85,7 @@
         <maven.compiler.target>21</maven.compiler.target>
 
         <!-- Dependency Versions -->
-        <frontend.version>4.13.2</frontend.version>
+        <frontend.version>4.13.4</frontend.version>
         <lib.alpine.version>${project.parent.version}</lib.alpine.version>
         <lib.awaitility.version>4.3.0</lib.awaitility.version>
         <lib.brotli-decoder.version>0.1.2</lib.brotli-decoder.version>
@@ -94,7 +94,7 @@
         <lib.cloud-sql-mysql-socket-factory-connector-j-8.version>1.24.1</lib.cloud-sql-mysql-socket-factory-connector-j-8.version>
         <lib.cloud-sql-postgres-socket-factory.version>1.24.1</lib.cloud-sql-postgres-socket-factory.version>
         <lib.cpe-parser.version>3.0.0</lib.cpe-parser.version>
-        <lib.commons-compress.version>1.27.1</lib.commons-compress.version>
+        <lib.commons-compress.version>1.28.0</lib.commons-compress.version>
         <lib.commons-text.version>1.13.0</lib.commons-text.version>
         <lib.cvss-calculator.version>1.4.2</lib.cvss-calculator.version>
         <lib.owasp-rr-calculator.version>1.0.1</lib.owasp-rr-calculator.version>
@@ -129,7 +129,7 @@
         <!-- JDBC Drivers -->
         <lib.jdbc-driver.mssql.version>12.10.0.jre11</lib.jdbc-driver.mssql.version>
         <lib.jdbc-driver.mysql.version>8.2.0</lib.jdbc-driver.mysql.version>
-        <lib.jdbc-driver.postgresql.version>42.7.5</lib.jdbc-driver.postgresql.version>
+        <lib.jdbc-driver.postgresql.version>42.7.7</lib.jdbc-driver.postgresql.version>
         <!-- Maven Plugin Properties -->
         <plugin.retirejs.breakOnFailure>false</plugin.retirejs.breakOnFailure>
         <plugin.jetty.version>12.0.19</plugin.jetty.version>
@@ -156,27 +156,18 @@
 
     <dependencyManagement>
         <dependencies>
-            <!--
-                Downgraded from 2.18.2 due to incompatibility with swagger-core.
-                https://github.com/swagger-api/swagger-core/issues/4755
-            -->
+            <!-- Resolve CVE-2025-7962 -->
             <dependency>
-                <groupId>com.fasterxml.jackson.dataformat</groupId>
-                <artifactId>jackson-dataformat-xml</artifactId>
-                <version>${lib.jackson.version}</version>
+                <groupId>org.eclipse.angus</groupId>
+                <artifactId>angus-mail</artifactId>
+                <version>2.0.4</version>
             </dependency>
 
-            <!--
-              Resolve CVE-2024-57699 (https://github.com/advisories/GHSA-pq2g-wx69-c263).
-              Highly unlikely to be exploitable in DT or Alpine, but we're bumping the
-              version anyway since the update is low-risk and reduces scanner noise.
-              TODO: Remove this when bumping Alpine to >= 3.2.0, which includes a version
-               of com.nimbusds:oauth2-oidc-sdk pulling in a newer json-smart version, too.
-            -->
+            <!-- Resolve CVE-2025-48924 -->
             <dependency>
-                <groupId>net.minidev</groupId>
-                <artifactId>json-smart</artifactId>
-                <version>2.5.2</version>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.18.0</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
