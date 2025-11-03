@@ -1,6 +1,6 @@
-FROM eclipse-temurin:21.0.6_7-jre-jammy@sha256:02fc89fa8766a9ba221e69225f8d1c10bb91885ddbd3c112448e23488ba40ab6 AS jre-build
+FROM eclipse-temurin:21.0.8_9-jre-jammy@sha256:8234720ae5083d3b972fe20b4a997b7c56546db8bf8da5f4c54c6470901e2e67 AS jre-build
 
-FROM debian:stable-slim@sha256:70b337e820bf51d399fa5bfa96a0066fbf22f3aa2c3307e2401b91e2207ac3c3
+FROM debian:stable-slim@sha256:8810492a2dd16b7f59239c1e0cc1e56c1a1a5957d11f639776bd6798e795608b
 
 # Arguments that can be passed at build time
 # Directory names must end with / to avoid errors when ADDing and COPYing
@@ -39,8 +39,8 @@ ENV TZ=Etc/UTC \
 # Create a user and assign home directory to a ${DATA_DIR}
 # Ensure UID 1000 & GID 1000 own all the needed directories
 RUN mkdir -p ${APP_DIR} ${DATA_DIR} \
-    && addgroup --system --gid ${GID} dtrack || true \
-    && adduser --system --disabled-login --ingroup dtrack --no-create-home --home ${DATA_DIR} --gecos "dtrack user" --shell /bin/false --uid ${UID} dtrack || true \
+    && groupadd --system --gid ${GID} dtrack || true \
+    && useradd --system --no-user-group --gid dtrack --no-create-home --home-dir ${DATA_DIR} --comment "dtrack user" --shell /bin/false --uid ${UID} dtrack || true \
     && chown -R dtrack:0 ${DATA_DIR} ${APP_DIR} \
     && chmod -R g=u ${DATA_DIR} ${APP_DIR} \
     \
