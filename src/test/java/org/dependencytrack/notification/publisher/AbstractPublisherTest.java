@@ -181,7 +181,7 @@ public abstract class AbstractPublisherTest<T extends Publisher> extends Persist
                 .scope(NotificationScope.PORTFOLIO)
                 .group(NotificationGroup.NEW_VULNERABILITY)
                 .level(NotificationLevel.INFORMATIONAL)
-                .title(NotificationConstants.Title.NEW_VULNERABILITY)
+                .title(NotificationUtil.generateNotificationTitle(NotificationConstants.Title.NEW_VULNERABILITY, project))
                 .content("")
                 .timestamp(LocalDateTime.ofEpochSecond(66666, 666, ZoneOffset.UTC))
                 .subject(subject);
@@ -318,6 +318,8 @@ public abstract class AbstractPublisherTest<T extends Publisher> extends Persist
                 .isThrownBy(() -> publisherInstance.inform(PublishContext.from(notification), notification, createConfig()));
     }
 
+
+
     private static Component createComponent(final Project project) {
         final var component = new Component();
         component.setProject(project);
@@ -339,7 +341,7 @@ public abstract class AbstractPublisherTest<T extends Publisher> extends Persist
         project.setVersion("projectVersion");
         project.setDescription("projectDescription");
         project.setPurl("pkg:maven/org.acme/projectName@projectVersion");
-        project.setTags(List.of(projectTag1, projectTag2));
+        project.setTags(Set.of(projectTag1, projectTag2));
         return project;
     }
 

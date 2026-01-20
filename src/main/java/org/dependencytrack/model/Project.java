@@ -64,6 +64,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -208,6 +209,7 @@ public class Project implements Serializable {
     @Persistent
     @Column(name = "DESCRIPTION", jdbcType = "VARCHAR")
     @JsonDeserialize(using = TrimmedStringDeserializer.class)
+    @Size(max = 255)
     @Pattern(regexp = RegexSequence.Definition.PRINTABLE_CHARS, message = "The description may only contain printable characters")
     private String description;
 
@@ -281,10 +283,9 @@ public class Project implements Serializable {
     private List<ProjectProperty> properties;
 
     @Persistent(table = "PROJECTS_TAGS", defaultFetchGroup = "true", mappedBy = "projects")
-    @Join(column = "PROJECT_ID")
+    @Join(column = "PROJECT_ID", primaryKey = "PROJECTS_TAGS_PK")
     @Element(column = "TAG_ID")
-    @Order(extensions = @Extension(vendorName = "datanucleus", key = "list-ordering", value = "name ASC"))
-    private List<Tag> tags;
+    private Set<Tag> tags;
 
     /**
      * Convenience field which will contain the date of the last entry in the {@link Bom} table
@@ -544,11 +545,11 @@ public class Project implements Serializable {
         this.properties = properties;
     }
 
-    public List<Tag> getTags() {
+    public Set<Tag> getTags() {
         return tags;
     }
 
-    public void setTags(List<Tag> tags) {
+    public void setTags(Set<Tag> tags) {
         this.tags = tags;
     }
 
@@ -670,19 +671,15 @@ public class Project implements Serializable {
 
     @Override
     public String toString() {
-        if (getPurl() != null) {
-            return getPurl().canonicalize();
-        } else {
-            StringBuilder sb = new StringBuilder();
-            if (getGroup() != null) {
-                sb.append(getGroup()).append(" : ");
-            }
-            sb.append(getName());
-            if (getVersion() != null) {
-                sb.append(" : ").append(getVersion());
-            }
-            return sb.toString();
+        StringBuilder sb = new StringBuilder();
+        if (getGroup() != null) {
+            sb.append(getGroup()).append(" : ");
         }
+        sb.append(getName());
+        if (getVersion() != null) {
+            sb.append(" : ").append(getVersion());
+        }
+        return sb.toString();
     }
 
     private final static class BooleanDefaultTrueSerializer extends JsonSerializer<Boolean> {

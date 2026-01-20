@@ -41,8 +41,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.dependencytrack.util.PersistenceUtil.assertPersistent;
 import static org.dependencytrack.util.PersistenceUtil.assertPersistentAll;
@@ -324,13 +327,15 @@ public class NotificationQueryManager extends QueryManager implements IQueryMana
             boolean modified = false;
 
             if (notificationRule.getTags() == null) {
-                notificationRule.setTags(new ArrayList<>());
+                notificationRule.setTags(new HashSet<>());
             }
 
             if (!keepExisting) {
-                for (final Tag existingTag : notificationRule.getTags()) {
+                final Iterator<Tag> existingTagsIterator = notificationRule.getTags().iterator();
+                while (existingTagsIterator.hasNext()) {
+                    final Tag existingTag = existingTagsIterator.next();
                     if (!tags.contains(existingTag)) {
-                        notificationRule.getTags().remove(existingTag);
+                        existingTagsIterator.remove();
                         if (existingTag.getNotificationRules() != null) {
                             existingTag.getNotificationRules().remove(notificationRule);
                         }
@@ -344,8 +349,8 @@ public class NotificationQueryManager extends QueryManager implements IQueryMana
                     notificationRule.getTags().add(tag);
 
                     if (tag.getNotificationRules() == null) {
-                        tag.setNotificationRules(new ArrayList<>(List.of(notificationRule)));
-                    } else if (!tag.getNotificationRules().contains(notificationRule)) {
+                        tag.setNotificationRules(new HashSet<>(List.of(notificationRule)));
+                    } else {
                         tag.getNotificationRules().add(notificationRule);
                     }
 

@@ -28,6 +28,16 @@ import alpine.server.filters.ApiFilter;
 import alpine.server.filters.AuthenticationFilter;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.ws.rs.HttpMethod;
+import jakarta.ws.rs.client.Entity;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import junitparams.JUnitParamsRunner;
+import junitparams.Parameters;
 import org.cyclonedx.model.ExternalReference.Type;
 import org.dependencytrack.JerseyTestRule;
 import org.dependencytrack.ResourceTest;
@@ -62,15 +72,8 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.ClassRule;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 
-import jakarta.json.Json;
-import jakarta.json.JsonArray;
-import jakarta.json.JsonObject;
-import jakarta.json.JsonObjectBuilder;
-import jakarta.ws.rs.HttpMethod;
-import jakarta.ws.rs.client.Entity;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -86,6 +89,7 @@ import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
 
+@RunWith(JUnitParamsRunner.class)
 public class ProjectResourceTest extends ResourceTest {
 
     @ClassRule
@@ -564,14 +568,21 @@ public class ProjectResourceTest extends ResourceTest {
     }
 
     @Test
-    public void createProjectEmptyTest() {
-        Project project = new Project();
-        project.setName(" ");
+    @Parameters(method = "projectValidationTestData")
+    public void createProjectValidationTest(String json, String expectedError) {
         Response response = jersey.target(V1_PROJECT)
                 .request()
                 .header(X_API_KEY, apiKey)
-                .put(Entity.entity(project, MediaType.APPLICATION_JSON));
-        Assert.assertEquals(400, response.getStatus(), 0);
+                .put(Entity.json(json));
+        Assert.assertEquals(400, response.getStatus());
+        Assert.assertEquals(expectedError, parseJsonArray(response).getJsonObject(0).getString("message"));
+    }
+
+    private Object[] projectValidationTestData() {
+        return new Object[]{
+                new Object[]{"{\"name\": \" \"}", "must not be blank"},
+                new Object[]{"{\"name\": \"Valid Project Name\", \"description\": \"" + "a".repeat(256) + "\"}", "size must be between 0 and 255"},
+        };
     }
 
     @Test
@@ -1069,7 +1080,7 @@ public class ProjectResourceTest extends ResourceTest {
             var t = new Tag();
             t.setName(name);
             return t;
-        }).collect(Collectors.toList()));
+        }).collect(Collectors.toSet()));
 
         // update the 1st time and add another tag
         var response = jersey.target(V1_PROJECT)
@@ -1101,7 +1112,7 @@ public class ProjectResourceTest extends ResourceTest {
         Assert.assertEquals("tag3", jsonTags.get(2).asJsonObject().getString("name"));
 
         // and finally delete one of the tags
-        jsonProject.getTags().remove(0);
+        jsonProject.getTags().removeIf(tag -> "tag1".equals(tag.getName()));
         response = jersey.target(V1_PROJECT)
                 .request()
                 .header(X_API_KEY, apiKey)
@@ -1504,7 +1515,7 @@ public class ProjectResourceTest extends ResourceTest {
             var t = new Tag();
             t.setName(name);
             return t;
-        }).collect(Collectors.toUnmodifiableList()));
+        }).collect(Collectors.toSet()));
         final var jsonProjectManufacturerContact = new OrganizationalContact();
         jsonProjectManufacturerContact.setName("newManufacturerContactName");
         final var jsonProjectManufacturer = new OrganizationalEntity();
