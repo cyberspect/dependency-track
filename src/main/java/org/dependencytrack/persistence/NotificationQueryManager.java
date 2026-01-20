@@ -438,4 +438,48 @@ public class NotificationQueryManager extends QueryManager implements IQueryMana
         }
     }
 
+    /**
+     * @since 4.13.1
+     */
+    @Override
+    public Set<String> getTeamMemberEmailsForNotificationRule(final long ruleId) {
+        final Query<?> query = pm.newQuery(Query.SQL, /* language=SQL */ """
+                SELECT "MANAGEDUSER"."EMAIL" AS "EMAIL"
+                  FROM "NOTIFICATIONRULE_TEAMS"
+                 INNER JOIN "TEAM"
+                    ON "TEAM"."ID" = "NOTIFICATIONRULE_TEAMS"."TEAM_ID"
+                 INNER JOIN "MANAGEDUSERS_TEAMS"
+                    ON "MANAGEDUSERS_TEAMS"."TEAM_ID" = "TEAM"."ID"
+                 INNER JOIN "MANAGEDUSER"
+                    ON "MANAGEDUSER"."ID" = "MANAGEDUSERS_TEAMS"."MANAGEDUSER_ID"
+                 WHERE "NOTIFICATIONRULE_TEAMS"."NOTIFICATIONRULE_ID" = :ruleId
+                   AND "MANAGEDUSER"."EMAIL" IS NOT NULL
+                 UNION ALL
+                SELECT "LDAPUSER"."EMAIL" AS "EMAIL"
+                  FROM "NOTIFICATIONRULE_TEAMS"
+                 INNER JOIN "TEAM"
+                    ON "TEAM"."ID" = "NOTIFICATIONRULE_TEAMS"."TEAM_ID"
+                 INNER JOIN "LDAPUSERS_TEAMS"
+                    ON "LDAPUSERS_TEAMS"."TEAM_ID" = "TEAM"."ID"
+                 INNER JOIN "LDAPUSER"
+                    ON "LDAPUSER"."ID" = "LDAPUSERS_TEAMS"."LDAPUSER_ID"
+                 WHERE "NOTIFICATIONRULE_TEAMS"."NOTIFICATIONRULE_ID" = :ruleId
+                   AND "LDAPUSER"."EMAIL" IS NOT NULL
+                 UNION ALL
+                SELECT "OIDCUSER"."EMAIL" AS "EMAIL"
+                  FROM "NOTIFICATIONRULE_TEAMS"
+                 INNER JOIN "TEAM"
+                    ON "TEAM"."ID" = "NOTIFICATIONRULE_TEAMS"."TEAM_ID"
+                 INNER JOIN "OIDCUSERS_TEAMS"
+                    ON "OIDCUSERS_TEAMS"."TEAM_ID" = "TEAM"."ID"
+                 INNER JOIN "OIDCUSER"
+                    ON "OIDCUSER"."ID" = "OIDCUSERS_TEAMS"."OIDCUSERS_ID"
+                 WHERE "NOTIFICATIONRULE_TEAMS"."NOTIFICATIONRULE_ID" = :ruleId
+                   AND "OIDCUSER"."EMAIL" IS NOT NULL
+                """);
+        query.setNamedParameters(Map.of("ruleId", ruleId));
+
+        return new HashSet<>(executeAndCloseResultList(query, String.class));
+    }
+
 }
