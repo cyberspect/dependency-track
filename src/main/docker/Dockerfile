@@ -92,11 +92,10 @@ CMD exec java ${JAVA_OPTIONS} ${EXTRA_JAVA_OPTIONS} \
     -Dlogback.configurationFile=${LOGGING_CONFIG_PATH} \
     -DdependencyTrack.logging.level=${LOGGING_LEVEL} \
     -jar ${WAR_FILENAME} \
-    -context ${CONTEXT} \
-    -port 8081
+    -context ${CONTEXT}
 
 # Specify which port Dependency-Track listens on
-EXPOSE 8081
+EXPOSE 8080
 
 # Add a healthcheck using the Dependency-Track version API
 HEALTHCHECK --interval=30s --start-period=60s --timeout=3s CMD wget -t 1 -T 3 --no-proxy -q -O /dev/null http://127.0.0.1:8080${CONTEXT}health || exit 1
