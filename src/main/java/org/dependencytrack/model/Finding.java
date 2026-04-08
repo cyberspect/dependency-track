@@ -64,6 +64,7 @@ public class Finding implements Serializable {
                  , "COMPONENT"."NAME"
                  , "COMPONENT"."GROUP"
                  , "COMPONENT"."VERSION"
+                 , "COMPONENT"."SCOPE"
                  , "COMPONENT"."PURL"
                  , "COMPONENT"."CPE"
                  , "VULNERABILITY"."UUID"
@@ -75,13 +76,20 @@ public class Finding implements Serializable {
                  , "VULNERABILITY"."RECOMMENDATION"
                  , "VULNERABILITY"."SEVERITY"
                  , "VULNERABILITY"."CVSSV2BASESCORE"
+                 , "VULNERABILITY"."CVSSV2VECTOR"
                  , "VULNERABILITY"."CVSSV3BASESCORE"
+                 , "VULNERABILITY"."CVSSV3VECTOR"
+                 , "VULNERABILITY"."CVSSV4SCORE"
+                 , "VULNERABILITY"."CVSSV4VECTOR"
                  , "VULNERABILITY"."OWASPRRLIKELIHOODSCORE"
                  , "VULNERABILITY"."OWASPRRTECHNICALIMPACTSCORE"
                  , "VULNERABILITY"."OWASPRRBUSINESSIMPACTSCORE"
+                 , "VULNERABILITY"."OWASPRRVECTOR"
                  , "VULNERABILITY"."EPSSSCORE"
                  , "VULNERABILITY"."EPSSPERCENTILE"
                  , "VULNERABILITY"."CWES"
+                 , "VULNERABILITY"."REFERENCES"
+                 , "VULNERABILITY"."PUBLISHED"
                  , "FINDINGATTRIBUTION"."ANALYZERIDENTITY"
                  , "FINDINGATTRIBUTION"."ATTRIBUTED_ON"
                  , "FINDINGATTRIBUTION"."ALT_ID"
@@ -111,6 +119,7 @@ public class Finding implements Serializable {
                  , "COMPONENT"."NAME"
                  , "COMPONENT"."GROUP"
                  , "COMPONENT"."VERSION"
+                 , "COMPONENT"."SCOPE"
                  , "COMPONENT"."PURL"
                  , "COMPONENT"."CPE"
                  , "VULNERABILITY"."UUID"
@@ -122,20 +131,26 @@ public class Finding implements Serializable {
                  , "VULNERABILITY"."RECOMMENDATION"
                  , "VULNERABILITY"."SEVERITY"
                  , "VULNERABILITY"."CVSSV2BASESCORE"
+                 , "VULNERABILITY"."CVSSV2VECTOR"
                  , "VULNERABILITY"."CVSSV3BASESCORE"
+                 , "VULNERABILITY"."CVSSV3VECTOR"
+                 , "VULNERABILITY"."CVSSV4SCORE"
+                 , "VULNERABILITY"."CVSSV4VECTOR"
                  , "VULNERABILITY"."OWASPRRLIKELIHOODSCORE"
                  , "VULNERABILITY"."OWASPRRTECHNICALIMPACTSCORE"
                  , "VULNERABILITY"."OWASPRRBUSINESSIMPACTSCORE"
+                 , "VULNERABILITY"."OWASPRRVECTOR"
                  , "VULNERABILITY"."EPSSSCORE"
                  , "VULNERABILITY"."EPSSPERCENTILE"
                  , "VULNERABILITY"."CWES"
+                 , "VULNERABILITY"."REFERENCES"
+                 , "VULNERABILITY"."PUBLISHED"
                  , "FINDINGATTRIBUTION"."ANALYZERIDENTITY"
                  , "FINDINGATTRIBUTION"."ATTRIBUTED_ON"
                  , "FINDINGATTRIBUTION"."ALT_ID"
                  , "FINDINGATTRIBUTION"."REFERENCE_URL"
                  , "ANALYSIS"."STATE"
                  , "ANALYSIS"."SUPPRESSED"
-                 , "VULNERABILITY"."PUBLISHED"
                  , "PROJECT"."UUID"
                  , "PROJECT"."NAME"
                  , "PROJECT"."VERSION"
@@ -173,53 +188,67 @@ public class Finding implements Serializable {
         optValue(component, "name", o[1]);
         optValue(component, "group", o[2]);
         optValue(component, "version", o[3]);
-        optValue(component, "purl", o[4]);
-        optValue(component, "cpe", o[5]);
+        optValue(component, "scope", o[4]);
+        optValue(component, "purl", o[5]);
+        optValue(component, "cpe", o[6]);
         optValue(component, "project", project.toString());
 
-        optValue(vulnerability, "uuid", o[6]);
-        optValue(vulnerability, "source", o[7]);
-        optValue(vulnerability, "vulnId", o[8]);
-        optValue(vulnerability, "title", o[9]);
-        optValue(vulnerability, "subtitle", o[10]);
-        if (o[11] instanceof final Clob clob) {
+        optValue(vulnerability, "uuid", o[7]);
+        optValue(vulnerability, "source", o[8]);
+        optValue(vulnerability, "vulnId", o[9]);
+        optValue(vulnerability, "title", o[10]);
+        optValue(vulnerability, "subtitle", o[11]);
+        if (o[12] instanceof final Clob clob) {
             optValue(vulnerability, "description", toString(clob));
         } else {
-            optValue(vulnerability, "description", o[11]);
+            optValue(vulnerability, "description", o[12]);
         }
-        if (o[12] instanceof final Clob clob) {
+        if (o[13] instanceof final Clob clob) {
             optValue(vulnerability, "recommendation", toString(clob));
         } else {
-            optValue(vulnerability, "recommendation", o[12]);
+            optValue(vulnerability, "recommendation", o[13]);
         }
-        final Severity severity = VulnerabilityUtil.getSeverity(o[13], (BigDecimal) o[14], (BigDecimal) o[15], (BigDecimal) o[16], (BigDecimal) o[17], (BigDecimal) o[18]);
-        optValue(vulnerability, "cvssV2BaseScore", o[14]);
-        optValue(vulnerability, "cvssV3BaseScore", o[15]);
-        optValue(vulnerability, "owaspLikelihoodScore", o[16]);
-        optValue(vulnerability, "owaspTechnicalImpactScore", o[17]);
-        optValue(vulnerability, "owaspBusinessImpactScore", o[18]);
+        final Severity severity = VulnerabilityUtil.getSeverity(o[14], (BigDecimal) o[15], (BigDecimal) o[17], (BigDecimal) o[19], (BigDecimal) o[21], (BigDecimal) o[22], (BigDecimal) o[23]);
+        optValue(vulnerability, "cvssV2BaseScore", o[15]);
+        optValue(vulnerability, "cvssV2Vector", o[16]);
+        optValue(vulnerability, "cvssV3BaseScore", o[17]);
+        optValue(vulnerability, "cvssV3Vector", o[18]);
+        optValue(vulnerability, "cvssV4Score", o[19]);
+        optValue(vulnerability, "cvssV4Vector", o[20]);
+        optValue(vulnerability, "owaspLikelihoodScore", o[21]);
+        optValue(vulnerability, "owaspTechnicalImpactScore", o[22]);
+        optValue(vulnerability, "owaspBusinessImpactScore", o[23]);
+        optValue(vulnerability, "owaspRRVector", o[24]);
         optValue(vulnerability, "severity", severity.name());
         optValue(vulnerability, "severityRank", severity.ordinal());
-        optValue(vulnerability, "epssScore", o[19]);
-        optValue(vulnerability, "epssPercentile", o[20]);
-        final List<Cwe> cwes = getCwes(o[21]);
+        optValue(vulnerability, "epssScore", o[25]);
+        optValue(vulnerability, "epssPercentile", o[26]);
+        final List<Cwe> cwes = getCwes(o[27]);
         if (cwes != null && !cwes.isEmpty()) {
             // Ensure backwards-compatibility with DT < 4.5.0. Remove this in v5!
             optValue(vulnerability, "cweId", cwes.get(0).getCweId());
             optValue(vulnerability, "cweName", cwes.get(0).getName());
         }
         optValue(vulnerability, "cwes", cwes);
-        optValue(attribution, "analyzerIdentity", o[22]);
-        optValue(attribution, "attributedOn", o[23]);
-        optValue(attribution, "alternateIdentifier", o[24]);
-        optValue(attribution, "referenceUrl", o[25]);
 
-        optValue(analysis, "state", o[26]);
-        optValue(analysis, "isSuppressed", o[27], false);
-        if (o.length > 30) {
-            optValue(vulnerability, "published", o[28]);
-            optValue(component, "projectName", o[30]);
-            optValue(component, "projectVersion", o[31]);
+        if (o[28] instanceof final Clob clob) {
+            optValue(vulnerability, "references", toString(clob));
+        } else {
+            optValue(vulnerability, "references", o[28]);
+        }
+        optValue(vulnerability, "published", o[29]);
+
+        optValue(attribution, "analyzerIdentity", o[30]);
+        optValue(attribution, "attributedOn", o[31]);
+        optValue(attribution, "alternateIdentifier", o[32]);
+        optValue(attribution, "referenceUrl", o[33]);
+
+        optValue(analysis, "state", o[34]);
+        optValue(analysis, "isSuppressed", o[35], false);
+
+        if (o.length > 36) {
+            optValue(component, "projectName", o[37]);
+            optValue(component, "projectVersion", o[38]);
         }
     }
 

@@ -24,14 +24,9 @@ import junitparams.Parameters;
 import org.apache.http.HttpHeaders;
 import org.dependencytrack.model.Component;
 import org.dependencytrack.model.RepositoryType;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.junit.jupiter.api.Assertions;
-import org.junit.runner.RunWith;
-import org.junit.runners.Suite;
-import org.junit.runners.Suite.SuiteClasses;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockserver.client.MockServerClient;
 import org.mockserver.integration.ClientAndServer;
 import org.mockserver.model.Header;
@@ -45,21 +40,13 @@ import java.util.List;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
-@RunWith(Suite.class)
-@SuiteClasses({
-        NugetMetaAnalyzerTest.ErrorHandlingTests.class,
-        NugetMetaAnalyzerTest.NugetTests.class,
-        NugetMetaAnalyzerTest.ArtifactoryTestsSemver1Tests.class,
-        NugetMetaAnalyzerTest.ArtifactoryTestsSemver2Tests.class,
-        NugetMetaAnalyzerTest.DateParserTests.class,
-})
-public class NugetMetaAnalyzerTest {
+class NugetMetaAnalyzerTest {
 
     public static final String LOCALHOST_REPO_INDEX = "http://localhost:1080/artifactory/api/nuget/v3/nuget-repo/index.json";
     private static ClientAndServer mockServer;
 
-    @BeforeClass
-    public static void beforeClass() throws Exception {
+    @BeforeAll
+    static void beforeClass() throws Exception {
         mockServer = ClientAndServer.startClientAndServer(1080);
 
         setupMockServerClient(
@@ -72,22 +59,22 @@ public class NugetMetaAnalyzerTest {
     private static void setupMockServerClient(
             String path,
             String responseFile,
-            String encodedBasicHeader
+            String authHeader
     ) throws Exception {
-        setupMockServerClient(path, responseFile, encodedBasicHeader, "application/json", 200);
+        setupMockServerClient(path, responseFile, authHeader, "application/json", 200);
     }
 
     private static void setupMockServerClient(
             String path,
             String responseFile,
-            String encodedBasicHeader,
+            String authHeader,
             String contentType,
             int statusCode
     ) throws Exception {
 
         List<Header> headers = new ArrayList<>();
-        if (encodedBasicHeader != null) {
-            headers.add(new Header("Authorization", encodedBasicHeader));
+        if (authHeader != null) {
+            headers.add(new Header("Authorization", authHeader));
         }
 
         new MockServerClient("localhost", 1080)
@@ -105,15 +92,21 @@ public class NugetMetaAnalyzerTest {
                 );
     }
 
-    @AfterClass
-    public static void afterClass() {
+    @AfterAll
+    static void afterClass() {
         mockServer.stop();
     }
 
-    public static class ErrorHandlingTests {
+    /**
+     * Various tests to confirm error handling behaviour when, e.g. the repo or package cannot
+     * be found. The analyzer should still return a MetaModel in these cases with null version and
+     * published. The analyzer should NOT crash.
+     */
+    @Nested
+    class ErrorHandlingTests {
 
         @Test
-        public void testBaseUrlNotFoundBehaviourWhenSettingRepoUrl() {
+        void testBaseUrlNotFoundBehaviourWhenSettingRepoUrl() {
             Assertions.assertDoesNotThrow(() -> {
                 var analyzer = new NugetMetaAnalyzer();
                 analyzer.setRepositoryBaseUrl("http://no-such-api.this-host-does-not-exist-nuget-repo.invalid");
@@ -121,7 +114,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testBaseUrlNotFoundBehaviourWhenCallingAnalyze() {
+        void testBaseUrlNotFoundBehaviourWhenCallingAnalyze() {
             Assertions.assertDoesNotThrow(() -> {
                 var analyzer = new NugetMetaAnalyzer();
                 analyzer.setRepositoryBaseUrl("http://no-such-api.this-host-does-not-exist-nuget-repo.invalid");
@@ -136,7 +129,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testRepoValidButPackageNotFoundBehaviour() throws Exception {
+        void testRepoValidButPackageNotFoundBehaviour() throws Exception {
 
             setupMockServerClient(
                     "/artifactory/api/nuget/v3/nuget-repo/registration-semver2/testing.no.such.package/index.json",
@@ -157,7 +150,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testErrorBetweenPageRequestsReturnsNullData() throws Exception {
+        void testErrorBetweenPageRequestsReturnsNullData() throws Exception {
 
             var analyzer = new NugetMetaAnalyzer();
             analyzer.setRepositoryBaseUrl(LOCALHOST_REPO_INDEX);
@@ -207,18 +200,18 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testNullComponentThrowsIllegalArgumentException() {
+        void testNullComponentThrowsIllegalArgumentException() {
             var analyzer = new NugetMetaAnalyzer();
             analyzer.setRepositoryBaseUrl(LOCALHOST_REPO_INDEX);
             Assertions.assertThrows(IllegalArgumentException.class, () -> analyzer.analyze(null));
         }
 
-        private void assertMetaModelExistsButEmpty(NugetMetaAnalyzer analyzer, MetaModel metaModel) {
-            Assertions.assertEquals(RepositoryType.NUGET, analyzer.supportedRepositoryType());
-            Assertions.assertNull(metaModel.getLatestVersion());
-            Assertions.assertNull(metaModel.getPublishedTimestamp());
-        }
+    }
 
+    private void assertMetaModelExistsButEmpty(NugetMetaAnalyzer analyzer, MetaModel metaModel) {
+        Assertions.assertEquals(RepositoryType.NUGET, analyzer.supportedRepositoryType());
+        Assertions.assertNull(metaModel.getLatestVersion());
+        Assertions.assertNull(metaModel.getPublishedTimestamp());
     }
 
     /**
@@ -227,13 +220,14 @@ public class NugetMetaAnalyzerTest {
      * against the live nuget feed, simply change the URL in the setup method to api.nuget.org - you can ignore the
      * MockServerClient calls because they won't be invoked.
      */
-    public static class NugetTests {
+    @Nested
+    class NugetTests {
 
         private Component component;
         private NugetMetaAnalyzer analyzer;
 
-        @Before
-        public void setUp() throws Exception {
+        @BeforeEach
+        void setUp() throws Exception {
             this.component = new Component();
             this.component.setInternal(false);
             this.component.setName("Microsoft.Data.SqlClient");
@@ -244,7 +238,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testAnalyzerWithMultipleInlinePages() throws Exception {
+        void testAnalyzerWithMultipleInlinePages() throws Exception {
 
             // This test also effectively covers pre-release versions (e.g. 6.1.0-preview2.25178.5)
             // and unlisted versions (6.1.0) by returning 6.0.2
@@ -284,13 +278,14 @@ public class NugetMetaAnalyzerTest {
      * This collection uses the service index to find the best RegistrationsBaseUrl, in this case
      * for semver2
      */
-    public static class ArtifactoryTestsSemver2Tests {
+    @Nested
+    class ArtifactoryTestsSemver2Tests {
 
         NugetMetaAnalyzer analyzer;
         Component component;
 
-        @Before
-        public void setUp() throws Exception {
+        @BeforeEach
+        void setUp() throws Exception {
 
             this.analyzer = new NugetMetaAnalyzer();
             this.analyzer.setRepositoryBaseUrl(LOCALHOST_REPO_INDEX);
@@ -316,7 +311,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testAnalyzerWithMultipageRegistrationInfo() throws Exception {
+        void testAnalyzerWithMultipageRegistrationInfo() throws Exception {
 
             // Page 2
             setupMockServerClient(
@@ -338,7 +333,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testAnalyzerWithMultipageRegistrationInfoIgnorePreReleaseAndUnlisted() throws Exception {
+        void testAnalyzerWithMultipageRegistrationInfoIgnorePreReleaseAndUnlisted() throws Exception {
 
             // Page 2
             setupMockServerClient(
@@ -353,7 +348,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testAnalyzerWithMultipageRegistrationInfoWhenPage2AllUnlisted() throws Exception {
+        void testAnalyzerWithMultipageRegistrationInfoWhenPage2AllUnlisted() throws Exception {
 
             // Page 2
             setupMockServerClient(
@@ -375,7 +370,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testAnalyzerWithMultipageRegistrationInfoWhenPage2AllPreRelease() throws Exception {
+        void testAnalyzerWithMultipageRegistrationInfoWhenPage2AllPreRelease() throws Exception {
 
             // Page 2
             setupMockServerClient(
@@ -397,7 +392,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testAnalyzerWithPreReleaseOnlyVersionsReturnsLatestPreReleaseVersion() throws Exception {
+        void testAnalyzerWithPreReleaseOnlyVersionsReturnsLatestPreReleaseVersion() throws Exception {
 
             // Test for log warning covered in 5075 - ensure no errors are thrown / logged
             // when no release versions exist
@@ -437,13 +432,14 @@ public class NugetMetaAnalyzerTest {
      * microsoft.data.sqlclient, returns the same number of items (64) as the semver2 version but the
      * results appear on a single page instead of 2 with the semver2 version.
      */
-    public static class ArtifactoryTestsSemver1Tests {
+    @Nested
+    class ArtifactoryTestsSemver1Tests {
 
         NugetMetaAnalyzer analyzer;
         Component component;
 
-        @Before
-        public void setUp() throws Exception {
+        @BeforeEach
+        void setUp() throws Exception {
 
             this.analyzer = new NugetMetaAnalyzer();
             this.analyzer.setRepositoryBaseUrl(LOCALHOST_REPO_INDEX);
@@ -475,7 +471,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testAnalyzerWithMultipageRegistrationInfo() throws Exception {
+        void testAnalyzerWithMultipageRegistrationInfo() throws Exception {
 
             // Page 2
             setupMockServerClient(
@@ -490,7 +486,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testAnalyzerWithMultipageRegistrationInfoIgnorePreReleaseAndUnlisted() throws Exception {
+        void testAnalyzerWithMultipageRegistrationInfoIgnorePreReleaseAndUnlisted() throws Exception {
 
             // Page 2
             setupMockServerClient(
@@ -505,7 +501,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testAnalyzerWithMultipageRegistrationInfoWhenPage2AllUnlisted() throws Exception {
+        void testAnalyzerWithMultipageRegistrationInfoWhenPage2AllUnlisted() throws Exception {
 
             // Page 2
             setupMockServerClient(
@@ -520,7 +516,7 @@ public class NugetMetaAnalyzerTest {
         }
 
         @Test
-        public void testAnalyzerWithMultipageRegistrationInfoWhenPage2AllPreRelease() throws Exception {
+        void testAnalyzerWithMultipageRegistrationInfoWhenPage2AllPreRelease() throws Exception {
 
             // Page 2
             setupMockServerClient(
@@ -536,43 +532,39 @@ public class NugetMetaAnalyzerTest {
 
     }
 
-    @RunWith(JUnitParamsRunner.class)
-    public static class DateParserTests {
+    @Nested
+    class DateParserTests {
 
         NugetMetaAnalyzer analyzer = new NugetMetaAnalyzer();
 
-        private static Object[] shouldParseValidDateFormatsParams() {
-            return new Object[]{
-                    "1900-01-01T00:00:00+00:00",
-                    "2025-08-13T23:22:21.20+01:00",
-                    "2025-08-13T23:22:21Z",
-                    "2020-08-04T10:39:03.7136823",
-                    "2025-08-13T23:22:21",
-                    "2020-08-04T10:39:03.7136823",
-                    "2023-03-28T22:26:40.43+00:00",
-                    "2025-08-14T08:12:23.8207879Z"
-            };
-        }
-
-        @Test
-        @Parameters(method = "shouldParseValidDateFormatsParams")
-        public void shouldParseValidDateFormats(String dateString) {
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "1900-01-01T00:00:00+00:00",
+                "2025-08-13T23:22:21.20+01:00",
+                "2025-08-13T23:22:21Z",
+                "2020-08-04T10:39:03.7136823",
+                "2025-08-13T23:22:21",
+                "2020-08-04T10:39:03.7136823",
+                "2023-03-28T22:26:40.43+00:00",
+                "2025-08-14T08:12:23.8207879Z"
+        })
+        void shouldParseValidDateFormats(String dateString) {
             Date result = this.analyzer.parseUpdateTime(dateString);
             Assertions.assertNotNull(result);
         }
 
         @Test
-        public void shouldReturnNullForBlankString() {
+        void shouldReturnNullForBlankString() {
             Assertions.assertNull(this.analyzer.parseUpdateTime("   "));
         }
 
         @Test
-        public void shouldReturnNullForInvalidDate() {
+        void shouldReturnNullForInvalidDate() {
             Assertions.assertNull(this.analyzer.parseUpdateTime("not-a-date"));
         }
 
         @Test
-        public void shouldReturnNullForNullInput() {
+        void shouldReturnNullForNullInput() {
             Assertions.assertNull(this.analyzer.parseUpdateTime(null));
         }
 

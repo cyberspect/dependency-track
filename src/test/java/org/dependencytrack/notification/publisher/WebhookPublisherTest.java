@@ -18,6 +18,8 @@
  */
 package org.dependencytrack.notification.publisher;
 
+import org.junit.jupiter.api.Test;
+
 import static com.github.tomakehurst.wiremock.client.WireMock.anyUrl;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
@@ -30,9 +32,9 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
         super(DefaultNotificationPublishers.WEBHOOK, new WebhookPublisher());
     }
 
-    @Override
+    @Test
     public void testInformWithBomConsumedNotification() {
-        super.testInformWithBomConsumedNotification();
+        super.baseTestInformWithBomConsumedNotification();
 
         verify(postRequestedFor(anyUrl())
                 .withHeader("Content-Type", equalTo("application/json"))
@@ -60,9 +62,9 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                         """)));
     }
 
-    @Override
+    @Test
     public void testInformWithBomProcessingFailedNotification() {
-        super.testInformWithBomProcessingFailedNotification();
+        super.baseTestInformWithBomProcessingFailedNotification();
 
         verify(postRequestedFor(anyUrl())
                 .withHeader("Content-Type", equalTo("application/json"))
@@ -96,9 +98,9 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                         """)));
     }
 
-    @Override
+    @Test
     public void testInformWithBomValidationFailedNotification() {
-        super.testInformWithBomValidationFailedNotification();
+        super.baseTestInformWithBomValidationFailedNotification();
 
         verify(postRequestedFor(anyUrl())
                 .withHeader("Content-Type", equalTo("application/json"))
@@ -131,9 +133,9 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                         """)));
     }
 
-    @Override
+    @Test
     public void testInformWithBomProcessingFailedNotificationAndNoSpecVersionInSubject() {
-        super.testInformWithBomProcessingFailedNotificationAndNoSpecVersionInSubject();
+        super.baseTestInformWithBomProcessingFailedNotificationAndNoSpecVersionInSubject();
 
         verify(postRequestedFor(anyUrl())
                 .withHeader("Content-Type", equalTo("application/json"))
@@ -167,9 +169,9 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                         """)));
     }
 
-    @Override
+    @Test
     public void testInformWithDataSourceMirroringNotification() {
-        super.testInformWithDataSourceMirroringNotification();
+        super.baseTestInformWithDataSourceMirroringNotification();
 
         verify(postRequestedFor(anyUrl())
                 .withHeader("Content-Type", equalTo("application/json"))
@@ -188,9 +190,9 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                         """)));
     }
 
-    @Override
+    @Test
     public void testInformWithNewVulnerabilityNotification() {
-        super.testInformWithNewVulnerabilityNotification();
+        super.baseTestInformWithNewVulnerabilityNotification();
 
         verify(postRequestedFor(anyUrl())
                 .withHeader("Content-Type", equalTo("application/json"))
@@ -226,6 +228,7 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                                 "recommendation": "vulnerabilityRecommendation",
                                 "cvssv2": 5.5,
                                 "cvssv3": 6.6,
+                                "cvssv4": 7.7,
                                 "owaspRRLikelihood": 1.1,
                                 "owaspRRTechnicalImpact": 2.2,
                                 "owaspRRBusinessImpact": 3.3,
@@ -261,9 +264,9 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                         """)));
     }
 
-    @Override
+    @Test
     public void testInformWithNewVulnerableDependencyNotification() {
-        super.testInformWithNewVulnerableDependencyNotification();
+        super.baseTestInformWithNewVulnerableDependencyNotification();
 
         verify(postRequestedFor(anyUrl())
                 .withHeader("Content-Type", equalTo("application/json"))
@@ -307,6 +310,7 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                                   "recommendation": "vulnerabilityRecommendation",
                                   "cvssv2": 5.5,
                                   "cvssv3": 6.6,
+                                  "cvssv4": 7.7,
                                   "owaspRRLikelihood": 1.1,
                                   "owaspRRTechnicalImpact": 2.2,
                                   "owaspRRBusinessImpact": 3.3,
@@ -333,9 +337,9 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                         """)));
     }
 
-    @Override
+    @Test
     public void testInformWithProjectAuditChangeNotification() {
-        super.testInformWithProjectAuditChangeNotification();
+        super.baseTestInformWithProjectAuditChangeNotification();
 
         verify(postRequestedFor(anyUrl())
                 .withHeader("Content-Type", equalTo("application/json"))
@@ -370,6 +374,7 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                                 "recommendation": "vulnerabilityRecommendation",
                                 "cvssv2": 5.5,
                                 "cvssv3": 6.6,
+                                "cvssv4": 7.7,
                                 "owaspRRLikelihood": 1.1,
                                 "owaspRRTechnicalImpact": 2.2,
                                 "owaspRRBusinessImpact": 3.3,
@@ -412,9 +417,9 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                         """)));
     }
 
-    @Override
+    @Test
     public void testPublishWithScheduledNewVulnerabilitiesNotification() {
-        super.testPublishWithScheduledNewVulnerabilitiesNotification();
+        super.baseTestPublishWithScheduledNewVulnerabilitiesNotification();
 
         verify(postRequestedFor(anyUrl())
                 .withHeader("Content-Type", equalTo("application/json"))
@@ -493,6 +498,7 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                                           "recommendation": "vulnerabilityRecommendation",
                                           "cvssv2": 5.5,
                                           "cvssv3": 6.6,
+                                          "cvssv4": 7.7,
                                           "owaspRRLikelihood": 1.1,
                                           "owaspRRTechnicalImpact": 2.2,
                                           "owaspRRBusinessImpact": 3.3,
@@ -528,9 +534,9 @@ public class WebhookPublisherTest extends AbstractWebhookPublisherTest<WebhookPu
                         """)));
     }
 
-    @Override
+    @Test
     public void testPublishWithScheduledNewPolicyViolationsNotification() {
-        super.testPublishWithScheduledNewPolicyViolationsNotification();
+        super.baseTestPublishWithScheduledNewPolicyViolationsNotification();
 
         verify(postRequestedFor(anyUrl())
                 .withHeader("Content-Type", equalTo("application/json"))

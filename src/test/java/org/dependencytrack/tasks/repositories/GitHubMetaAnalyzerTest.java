@@ -23,51 +23,60 @@ import junitparams.JUnitParamsRunner;
 import junitparams.Parameters;
 import org.dependencytrack.model.Component;
 import org.dependencytrack.model.RepositoryType;
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import static java.lang.Boolean.FALSE;
 import static java.lang.Boolean.TRUE;
 
-@RunWith(JUnitParamsRunner.class)
-public class GitHubMetaAnalyzerTest {
+// TODO this depends on an external API and will fail if that API doesn't respond fast enough; this especially
+//      happens rather fast when executing tests locally repeatedly
+@Timeout(value = 5, unit = TimeUnit.SECONDS)
+class GitHubMetaAnalyzerTest {
 
     private static final String COMMIT_LATEST_VERSION_TYPE_PATTERN = "^[a-f0-9]{7,40}$";
     private static final String RELEASE_LATEST_VERSION_TYPE_PATTERN = "^v.*$";
 
-    @Test
-    @Parameters(method = "testAnalyzerData")
-    public void testAnalyzerInvalidTag(String purl, String latestVersionPattern, Boolean versionExists) throws Exception {
+    @ParameterizedTest
+    @MethodSource("testAnalyzerData")
+    void testAnalyzerInvalidTag(String purl, String latestVersionPattern, Boolean versionExists) throws Exception {
         final var component = new Component();
         component.setPurl(new PackageURL(purl));
 
         final var analyzer = new GithubMetaAnalyzer();
-        Assert.assertTrue(analyzer.isApplicable(component));
-        Assert.assertEquals(RepositoryType.GITHUB, analyzer.supportedRepositoryType());
+        Assertions.assertTrue(analyzer.isApplicable(component));
+        Assertions.assertEquals(RepositoryType.GITHUB, analyzer.supportedRepositoryType());
 
         MetaModel metaModel = analyzer.analyze(component);
 
-        Assert.assertNotNull(metaModel.getLatestVersion());
-        Assert.assertTrue(metaModel.getLatestVersion().matches(latestVersionPattern));
+        Assertions.assertNotNull(metaModel.getLatestVersion());
+        Assertions.assertTrue(metaModel.getLatestVersion().matches(latestVersionPattern));
         if (versionExists) {
-            Assert.assertNotNull(metaModel.getPublishedTimestamp());
+            Assertions.assertNotNull(metaModel.getPublishedTimestamp());
         } else {
-            Assert.assertNull(metaModel.getPublishedTimestamp());
+            Assertions.assertNull(metaModel.getPublishedTimestamp());
         }
     }
 
 
-    static Object[] testAnalyzerData() {
-        return new Object[]{
-                new Object[]{"pkg:github/CycloneDX/cdxgen@v9.8.9", RELEASE_LATEST_VERSION_TYPE_PATTERN, TRUE},
-                new Object[]{"pkg:github/CycloneDX/cdxgen@4359dee1b7bd29ee25bc78e358a1254a0277ee96", COMMIT_LATEST_VERSION_TYPE_PATTERN, TRUE},
-                new Object[]{"pkg:github/CycloneDX/cdxgen@4359dee", COMMIT_LATEST_VERSION_TYPE_PATTERN, TRUE},
-                new Object[]{"pkg:github/CycloneDX/cdxgen", RELEASE_LATEST_VERSION_TYPE_PATTERN, FALSE},
-                new Object[]{"pkg:github/CycloneDX/cdxgen@0000000", COMMIT_LATEST_VERSION_TYPE_PATTERN, FALSE},
-                new Object[]{"pkg:github/CycloneDX/cdxgen@invalid-release", RELEASE_LATEST_VERSION_TYPE_PATTERN, FALSE},
-                new Object[]{"pkg:github/google/gtm-session-fetcher@3.1.0", RELEASE_LATEST_VERSION_TYPE_PATTERN, FALSE},
-                new Object[]{"pkg:github/boostorg/boost@1.88.0.beta1", "boost-.*", FALSE}
-        };
+    static Stream<Arguments> testAnalyzerData() {
+        return Stream.of(
+                Arguments.of("pkg:github/CycloneDX/cdxgen@v9.8.9", RELEASE_LATEST_VERSION_TYPE_PATTERN, TRUE),
+                Arguments.of("pkg:github/CycloneDX/cdxgen@4359dee1b7bd29ee25bc78e358a1254a0277ee96", COMMIT_LATEST_VERSION_TYPE_PATTERN, TRUE),
+                Arguments.of("pkg:github/CycloneDX/cdxgen@4359dee", COMMIT_LATEST_VERSION_TYPE_PATTERN, TRUE),
+                Arguments.of("pkg:github/CycloneDX/cdxgen", RELEASE_LATEST_VERSION_TYPE_PATTERN, FALSE),
+                Arguments.of("pkg:github/CycloneDX/cdxgen@0000000", COMMIT_LATEST_VERSION_TYPE_PATTERN, FALSE),
+                Arguments.of("pkg:github/CycloneDX/cdxgen@invalid-release", RELEASE_LATEST_VERSION_TYPE_PATTERN, FALSE),
+                Arguments.of("pkg:github/google/gtm-session-fetcher@3.1.0", RELEASE_LATEST_VERSION_TYPE_PATTERN, FALSE),
+                Arguments.of("pkg:github/boostorg/boost@1.88.0.beta1", "boost-.*", FALSE)
+        );
     }
 }

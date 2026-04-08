@@ -22,9 +22,9 @@ import alpine.common.logging.Logger;
 import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
 import com.github.packageurl.PackageURLBuilder;
-import io.github.jeremylong.openvulnerability.client.ghsa.CVSS;
 import io.github.jeremylong.openvulnerability.client.ghsa.CWE;
 import io.github.jeremylong.openvulnerability.client.ghsa.CWEs;
+import io.github.jeremylong.openvulnerability.client.ghsa.Epss;
 import io.github.jeremylong.openvulnerability.client.ghsa.Package;
 import io.github.jeremylong.openvulnerability.client.ghsa.Reference;
 import io.github.jeremylong.openvulnerability.client.ghsa.SecurityAdvisory;
@@ -35,9 +35,8 @@ import org.dependencytrack.model.Vulnerability;
 import org.dependencytrack.model.VulnerabilityAlias;
 import org.dependencytrack.model.VulnerableSoftware;
 import org.dependencytrack.parser.common.resolver.CweResolver;
+import org.dependencytrack.util.CvssUtil;
 import org.dependencytrack.util.VulnerabilityUtil;
-import us.springett.cvss.Cvss;
-import us.springett.cvss.Score;
 
 import java.math.BigDecimal;
 import java.time.ZonedDateTime;
@@ -84,28 +83,49 @@ public final class ModelConverter {
         vuln.setSeverity(convertSeverity(advisory.getSeverity()));
 
         if (advisory.getCvssSeverities() != null) {
-            final CVSS cvssv3 = advisory.getCvssSeverities().getCvssV3();
+            final var cvssv3 = advisory.getCvssSeverities().getCvssV3();
             if (cvssv3 != null) {
-                final Cvss parsedCvssV3 = Cvss.fromVector(cvssv3.getVectorString());
+                final var parsedCvssV3 = CvssUtil.parse(cvssv3.getVectorString());
                 if (parsedCvssV3 != null) {
-                    final Score calculatedScore = parsedCvssV3.calculateScore();
-                    vuln.setCvssV3Vector(cvssv3.getVectorString());
-                    vuln.setCvssV3BaseScore(BigDecimal.valueOf(calculatedScore.getBaseScore()));
-                    vuln.setCvssV3ExploitabilitySubScore(BigDecimal.valueOf(calculatedScore.getExploitabilitySubScore()));
-                    vuln.setCvssV3ImpactSubScore(BigDecimal.valueOf(calculatedScore.getImpactSubScore()));
+                    vuln.applyV3Score(parsedCvssV3);
                 }
             }
 
-            // TODO: advisory.getCvssSeverities().getCvssV4()
-            //  Requires CVSSv4 support in the DT data model.
+            final var cvssv4 = advisory.getCvssSeverities().getCvssV4();
+            if (cvssv4 != null) {
+                final var parsedCvssV4 = CvssUtil.parse(cvssv4.getVectorString());
+                if (parsedCvssV4 != null) {
+                    vuln.applyV4Score(parsedCvssV4);
+                }
+            }
 
             vuln.setSeverity(VulnerabilityUtil.getSeverity(
                     vuln.getSeverity(),
                     vuln.getCvssV2BaseScore(),
                     vuln.getCvssV3BaseScore(),
+                    vuln.getCvssV4Score(),
                     vuln.getOwaspRRLikelihoodScore(),
                     vuln.getOwaspRRTechnicalImpactScore(),
                     vuln.getOwaspRRBusinessImpactScore()));
+        }
+
+        if (advisory.getEpss() != null) {
+            final Epss epss = advisory.getEpss();
+            // GitHub's GraphQL API (https://docs.github.com/en/graphql/reference/objects#securityadvisoryepss):
+            //   "percentage" = exploitation probability (EPSS score, 0.0-1.0)
+            //   "percentile" = relative rank compared to other CVEs (0.0-1.0)
+            //
+            // NOTE: the open-vulnerability-clients library Javadoc has these two fields documented
+            // with swapped semantics — trust the live API values, not the Javadoc.
+            // Verified against real API responses, e.g. GHSA-57j2-w4cx-62h2 (CVE-2020-36518):
+            //   percentage=0.00514 (0.514% exploitation probability)
+            //   percentile=0.66009 (ranked above 66% of all CVEs)
+            if (epss.getPercentage() != null) {
+                vuln.setEpssScore(new BigDecimal(epss.getPercentage().toString()));
+            }
+            if (epss.getPercentile() != null) {
+                vuln.setEpssPercentile(new BigDecimal(epss.getPercentile().toString()));
+            }
         }
 
         if (advisory.getIdentifiers() != null && !advisory.getIdentifiers().isEmpty()) {

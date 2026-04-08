@@ -26,8 +26,8 @@ import alpine.notification.Subscription;
 import alpine.security.crypto.DataEncryption;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.http.Fault;
-import com.github.tomakehurst.wiremock.junit.WireMockRule;
-import com.github.tomakehurst.wiremock.verification.LoggedRequest;
+import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
+import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.util.Timestamps;
 import org.assertj.core.api.SoftAssertions;
@@ -42,12 +42,11 @@ import org.dependencytrack.model.Vulnerability;
 import org.dependencytrack.model.VulnerabilityAnalysisLevel;
 import org.dependencytrack.notification.NotificationGroup;
 import org.dependencytrack.notification.NotificationScope;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import trivy.proto.common.CVSS;
 import trivy.proto.common.DataSource;
 import trivy.proto.common.PkgIdentifier;
@@ -66,8 +65,9 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
+import static com.github.tomakehurst.wiremock.client.WireMock.verify;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.dependencytrack.model.ConfigPropertyConstants.SCANNER_ANALYSIS_CACHE_VALIDITY_PERIOD;
 import static org.dependencytrack.model.ConfigPropertyConstants.SCANNER_TRIVY_API_TOKEN;
@@ -77,18 +77,16 @@ import static org.dependencytrack.model.ConfigPropertyConstants.SCANNER_TRIVY_IG
 import static org.dependencytrack.model.ConfigPropertyConstants.SCANNER_TRIVY_SCAN_LIBRARY;
 import static org.dependencytrack.model.ConfigPropertyConstants.SCANNER_TRIVY_SCAN_OS;
 
-public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
+@WireMockTest
+class TrivyAnalysisTaskTest extends PersistenceCapableTest {
 
-    @Rule
-    public WireMockRule wireMock = new WireMockRule(options().dynamicPort());
-
-    @BeforeClass
+    @BeforeAll
     public static void setUpClass() {
         NotificationService.getInstance().subscribe(new Subscription(NotificationSubscriber.class));
     }
 
-    @Before
-    public void setUp() throws Exception {
+    @BeforeEach
+    public void setUp(WireMockRuntimeInfo wmRuntimeInfo) throws Exception {
         qm.createConfigProperty(
                 SCANNER_TRIVY_ENABLED.getGroupName(),
                 SCANNER_TRIVY_ENABLED.getPropertyName(),
@@ -106,7 +104,7 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
         qm.createConfigProperty(
                 SCANNER_TRIVY_BASE_URL.getGroupName(),
                 SCANNER_TRIVY_BASE_URL.getPropertyName(),
-                wireMock.baseUrl(),
+                wmRuntimeInfo.getHttpBaseUrl(),
                 SCANNER_TRIVY_BASE_URL.getPropertyType(),
                 SCANNER_TRIVY_BASE_URL.getDescription()
         );
@@ -140,18 +138,18 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
         );
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         NOTIFICATIONS.clear();
     }
 
-    @AfterClass
+    @AfterAll
     public static void tearDownClass() {
         NotificationService.getInstance().unsubscribe(new Subscription(NotificationSubscriber.class));
     }
 
     @Test
-    public void testIsCapable() {
+    void testIsCapable() {
         final var asserts = new SoftAssertions();
 
         for (final Map.Entry<String, Boolean> test : Map.of(
@@ -169,26 +167,26 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void testAnalyzeWithRetry() throws ParseException {
-        wireMock.stubFor(post(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/PutBlob"))
+    void testAnalyzeWithRetry() throws ParseException {
+        stubFor(post(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/PutBlob"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/protobuf")));
 
-        wireMock.stubFor(post(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))
+        stubFor(post(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))
                 .inScenario("scanRequestWithGatewayTimeout")
                 .willReturn(aResponse()
                         .withStatus(504))
                 .willSetStateTo("secondAttempt"));
 
-        wireMock.stubFor(post(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))
+        stubFor(post(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))
                 .inScenario("scanRequestWithGatewayTimeout")
                 .whenScenarioStateIs("secondAttempt")
                 .willReturn(aResponse()
                         .withStatus(504))
                 .willSetStateTo("thirdAttempt"));
 
-        wireMock.stubFor(post(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))
+        stubFor(post(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))
                 .inScenario("scanRequestWithGatewayTimeout")
                 .whenScenarioStateIs("thirdAttempt")
                 .willReturn(aResponse()
@@ -229,6 +227,8 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
                                                         Map.entry("ghsa", CVSS.newBuilder()
                                                                 .setV3Vector("CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:H")
                                                                 .setV3Score(6.5)
+                                                                .setV40Vector("CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N")
+                                                                .setV40Score(7.1)
                                                                 .build()),
                                                         Map.entry("nvd", CVSS.newBuilder()
                                                                 .setV3Vector("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H")
@@ -262,7 +262,7 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
                                 .build()
                                 .toByteArray())));
 
-        wireMock.stubFor(post(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/DeleteBlobs"))
+        stubFor(post(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/DeleteBlobs"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/protobuf")));
@@ -298,6 +298,8 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
             assertThat(vuln.getCvssV2Vector()).isNull();
             assertThat(vuln.getCvssV3BaseScore()).isEqualByComparingTo("6.5");
             assertThat(vuln.getCvssV3Vector()).isEqualTo("CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:H");
+            assertThat(vuln.getCvssV4Score()).isEqualByComparingTo("7.1");
+            assertThat(vuln.getCvssV4Vector()).isEqualTo("CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:N");
             assertThat(vuln.getSeverity()).isEqualTo(Severity.MEDIUM);
             assertThat(vuln.getCwes()).containsOnly(121, 787);
             assertThat(vuln.getPatchedVersions()).isEqualTo("6.4.0, 5.4.0");
@@ -325,19 +327,19 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
                         assertThat(notification.getGroup()).isEqualTo(NotificationGroup.NEW_VULNERABILITY.name())
         );
 
-        wireMock.verify(postRequestedFor(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/PutBlob"))
+        verify(postRequestedFor(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/PutBlob"))
                 .withHeader("Trivy-Token", equalTo("token"))
                 .withHeader("Accept", equalTo("application/protobuf"))
                 .withHeader("Content-Type", equalTo("application/protobuf"))
                 .withHeader("User-Agent", equalTo(ManagedHttpClientFactory.getUserAgent())));
 
-        wireMock.verify(exactly(3), postRequestedFor(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))
+        verify(exactly(3), postRequestedFor(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))
                 .withHeader("Trivy-Token", equalTo("token"))
                 .withHeader("Accept", equalTo("application/protobuf"))
                 .withHeader("Content-Type", equalTo("application/protobuf"))
                 .withHeader("User-Agent", equalTo(ManagedHttpClientFactory.getUserAgent())));
 
-        wireMock.verify(postRequestedFor(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/DeleteBlobs"))
+        verify(postRequestedFor(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/DeleteBlobs"))
                 .withHeader("Trivy-Token", equalTo("token"))
                 .withHeader("Accept", equalTo("application/protobuf"))
                 .withHeader("Content-Type", equalTo("application/protobuf"))
@@ -345,13 +347,13 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void testAnalyzeWithNoVulnerabilities() {
-        wireMock.stubFor(post(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/PutBlob"))
+    void testAnalyzeWithNoVulnerabilities() {
+        stubFor(post(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/PutBlob"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/protobuf")));
 
-        wireMock.stubFor(post(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))
+        stubFor(post(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/protobuf")
@@ -364,7 +366,7 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
                                 .build()
                                 .toByteArray())));
 
-        wireMock.stubFor(post(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/DeleteBlobs"))
+        stubFor(post(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/DeleteBlobs"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")));
@@ -394,14 +396,14 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
                         assertThat(notification.getGroup()).isEqualTo(NotificationGroup.PROJECT_CREATED.name())
                 );
 
-        wireMock.verify(postRequestedFor(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/PutBlob")));
-        wireMock.verify(postRequestedFor(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan")));
-        wireMock.verify(postRequestedFor(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/DeleteBlobs")));
+        verify(postRequestedFor(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/PutBlob")));
+        verify(postRequestedFor(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan")));
+        verify(postRequestedFor(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/DeleteBlobs")));
     }
 
     @Test
-    public void testAnalyzeWithConnectionError() {
-        wireMock.stubFor(any(anyUrl())
+    void testAnalyzeWithConnectionError() {
+        stubFor(any(anyUrl())
                 .willReturn(aResponse()
                         .withFault(Fault.CONNECTION_RESET_BY_PEER)));
 
@@ -439,19 +441,19 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
                 }
         );
 
-        wireMock.verify(exactly(1), postRequestedFor(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/PutBlob")));
-        wireMock.verify(exactly(0), postRequestedFor(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan")));
-        wireMock.verify(exactly(0), postRequestedFor(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/DeleteBlobs")));
+        verify(exactly(1), postRequestedFor(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/PutBlob")));
+        verify(exactly(0), postRequestedFor(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan")));
+        verify(exactly(0), postRequestedFor(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/DeleteBlobs")));
     }
 
     @Test
-    public void testAnalyzeRespectsConfiguredScanningOption() throws InvalidProtocolBufferException {
-        wireMock.stubFor(post(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/PutBlob"))
+    void testAnalyzeRespectsConfiguredScanningOption() throws InvalidProtocolBufferException {
+        stubFor(post(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/PutBlob"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/protobuf")));
 
-        wireMock.stubFor(post(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))
+        stubFor(post(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/protobuf")
@@ -464,7 +466,7 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
                                 .build()
                                 .toByteArray())));
 
-        wireMock.stubFor(post(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/DeleteBlobs"))
+        stubFor(post(urlPathEqualTo("/twirp/trivy.cache.v1.Cache/DeleteBlobs"))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")));
@@ -484,7 +486,7 @@ public class TrivyAnalysisTaskTest extends PersistenceCapableTest {
         new TrivyAnalysisTask().inform(new TrivyAnalysisEvent(
                 List.of(component), VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS));
 
-        wireMock.verify(postRequestedFor(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan")));
+        verify(postRequestedFor(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan")));
         var request = WireMock.findAll(postRequestedFor(urlPathEqualTo("/twirp/trivy.scanner.v1.Scanner/Scan"))).get(0);
         var scanRequest = trivy.proto.scanner.v1.ScanRequest.parseFrom(request.getBody());
 

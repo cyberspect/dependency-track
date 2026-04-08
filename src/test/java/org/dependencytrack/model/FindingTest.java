@@ -20,8 +20,8 @@ package org.dependencytrack.model;
 
 import org.dependencytrack.PersistenceCapableTest;
 import org.dependencytrack.tasks.scanners.AnalyzerIdentity;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.Date;
@@ -30,58 +30,87 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class FindingTest extends PersistenceCapableTest {
+class FindingTest extends PersistenceCapableTest {
 
     private final UUID projectUuid = UUID.randomUUID();
     private final Date attributedOn = new Date();
     private final Finding finding = new Finding(projectUuid, "component-uuid", "component-name", "component-group",
-            "component-version", "component-purl", "component-cpe", "vuln-uuid", "vuln-source", "vuln-vulnId", "vuln-title",
-            "vuln-subtitle", "vuln-description", "vuln-recommendation", Severity.HIGH, BigDecimal.valueOf(7.2), BigDecimal.valueOf(8.4), BigDecimal.valueOf(1.25), BigDecimal.valueOf(1.75), BigDecimal.valueOf(1.3),
-            "0.5", "0.9", null, AnalyzerIdentity.INTERNAL_ANALYZER, attributedOn, null, null, AnalysisState.NOT_AFFECTED, true);
+            "component-version", "Required","component-purl", "component-cpe", "vuln-uuid", "vuln-source", "vuln-vulnId", "vuln-title",
+            "vuln-subtitle", "vuln-description", "vuln-recommendation",
+            Severity.HIGH, // 14
+            BigDecimal.valueOf(7.2), // 15
+            "CVSS:2.0/AV:N/AC:L/Au:N/C:P/I:P/A:P", // 16
+            BigDecimal.valueOf(8.4), // 17
+            "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", // 18
+            BigDecimal.valueOf(9.2), // 19
+            "CVSS:4.0/...", // 20
+            BigDecimal.valueOf(1.25), // 21
+            BigDecimal.valueOf(1.75), // 22
+            BigDecimal.valueOf(1.3), // 23
+            "OWASP_VECTOR", // 24
+            BigDecimal.valueOf(0.5), // 25
+            BigDecimal.valueOf(0.9), // 26
+            "787,79", // 27
+            "vuln-references", // 28
+            attributedOn, // 29
+            AnalyzerIdentity.INTERNAL_ANALYZER, // 30
+            attributedOn, // 31
+            null, // 32
+            null, // 33
+            AnalysisState.NOT_AFFECTED, // 34
+            true // 35
+    );
 
     @Test
-    public void testComponent() {
+    void testComponent() {
         Map<String, Object> map = finding.getComponent();
-        Assert.assertEquals("component-uuid", map.get("uuid"));
-        Assert.assertEquals("component-name", map.get("name"));
-        Assert.assertEquals("component-group", map.get("group"));
-        Assert.assertEquals("component-version", map.get("version"));
-        Assert.assertEquals("component-purl", map.get("purl"));
+        Assertions.assertEquals("component-uuid", map.get("uuid"));
+        Assertions.assertEquals("component-name", map.get("name"));
+        Assertions.assertEquals("component-group", map.get("group"));
+        Assertions.assertEquals("component-version", map.get("version"));
+        Assertions.assertEquals("component-purl", map.get("purl"));
     }
 
     @Test
-    public void testVulnerability() {
+    void testVulnerability() {
         Map<String, Object> map = finding.getVulnerability();
-        Assert.assertEquals("vuln-uuid", map.get("uuid"));
-        Assert.assertEquals("vuln-source", map.get("source"));
-        Assert.assertEquals("vuln-vulnId", map.get("vulnId"));
-        Assert.assertEquals("vuln-title", map.get("title"));
-        Assert.assertEquals("vuln-subtitle", map.get("subtitle"));
-        //Assert.assertEquals("vuln-description", map.get("description"));
-        //Assert.assertEquals("vuln-recommendation", map.get("recommendation"));
-        Assert.assertEquals(BigDecimal.valueOf(7.2), map.get("cvssV2BaseScore"));
-        Assert.assertEquals(BigDecimal.valueOf(8.4), map.get("cvssV3BaseScore"));
-        Assert.assertEquals(BigDecimal.valueOf(1.25), map.get("owaspLikelihoodScore"));
-        Assert.assertEquals(BigDecimal.valueOf(1.75), map.get("owaspTechnicalImpactScore"));
-        Assert.assertEquals(BigDecimal.valueOf(1.3), map.get("owaspBusinessImpactScore"));
-        Assert.assertEquals(Severity.HIGH.name(), map.get("severity"));
-        Assert.assertEquals(1, map.get("severityRank"));
+        Assertions.assertEquals("vuln-uuid", map.get("uuid"));
+        Assertions.assertEquals("vuln-source", map.get("source"));
+        Assertions.assertEquals("vuln-vulnId", map.get("vulnId"));
+        Assertions.assertEquals("vuln-title", map.get("title"));
+        Assertions.assertEquals("vuln-subtitle", map.get("subtitle"));
+        //Assertions.assertEquals("vuln-description", map.get("description"));
+        //Assertions.assertEquals("vuln-recommendation", map.get("recommendation"));
+        Assertions.assertEquals(BigDecimal.valueOf(7.2), map.get("cvssV2BaseScore"));
+        Assertions.assertEquals("CVSS:2.0/AV:N/AC:L/Au:N/C:P/I:P/A:P", map.get("cvssV2Vector"));
+        Assertions.assertEquals(BigDecimal.valueOf(8.4), map.get("cvssV3BaseScore"));
+        Assertions.assertEquals("CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", map.get("cvssV3Vector"));
+        Assertions.assertEquals(BigDecimal.valueOf(9.2), map.get("cvssV4Score"));
+        Assertions.assertEquals("CVSS:4.0/...", map.get("cvssV4Vector"));
+        Assertions.assertEquals(BigDecimal.valueOf(1.25), map.get("owaspLikelihoodScore"));
+        Assertions.assertEquals(BigDecimal.valueOf(1.75), map.get("owaspTechnicalImpactScore"));
+        Assertions.assertEquals(BigDecimal.valueOf(1.3), map.get("owaspBusinessImpactScore"));
+        Assertions.assertEquals("OWASP_VECTOR", map.get("owaspRRVector"));
+        Assertions.assertEquals(Severity.HIGH.name(), map.get("severity"));
+        Assertions.assertEquals(1, map.get("severityRank"));
+        Assertions.assertEquals("vuln-references", map.get("references"));
+        Assertions.assertEquals(attributedOn, map.get("published"));
     }
 
     @Test
-    public void testAnalysis() {
+    void testAnalysis() {
         Map<String, Object> map = finding.getAnalysis();
-        Assert.assertEquals(AnalysisState.NOT_AFFECTED, map.get("state"));
-        Assert.assertEquals(true, map.get("isSuppressed"));
+        Assertions.assertEquals(AnalysisState.NOT_AFFECTED, map.get("state"));
+        Assertions.assertEquals(true, map.get("isSuppressed"));
     }
 
     @Test
-    public void testMatrix() {
-        Assert.assertEquals(projectUuid + ":component-uuid" + ":vuln-uuid", finding.getMatrix());
+    void testMatrix() {
+        Assertions.assertEquals(projectUuid + ":component-uuid" + ":vuln-uuid", finding.getMatrix());
     }
 
     @Test
-    public void testGetCwes() {
+    void testGetCwes() {
         assertThat(Finding.getCwes("787,79,,89,"))
                 .hasSize(3)
                 .satisfiesExactly(
@@ -92,14 +121,13 @@ public class FindingTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void testGetCwesWhenInputIsEmpty() {
+    void testGetCwesWhenInputIsEmpty() {
         assertThat(Finding.getCwes("")).isNull();
         assertThat(Finding.getCwes(",")).isNull();
     }
 
     @Test
-    public void testGetCwesWhenInputIsNull() {
+    void testGetCwesWhenInputIsNull() {
         assertThat(Finding.getCwes(null)).isNull();
     }
-
 }

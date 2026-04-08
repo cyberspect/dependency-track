@@ -31,14 +31,14 @@ import org.dependencytrack.model.Project;
 import org.dependencytrack.model.Vulnerability;
 import org.dependencytrack.model.VulnerabilityAnalysisLevel;
 import org.dependencytrack.tasks.VulnerabilityAnalysisTask;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Assume;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.images.PullPolicy;
@@ -55,27 +55,21 @@ import static org.dependencytrack.model.ConfigPropertyConstants.SCANNER_TRIVY_SC
 import static org.dependencytrack.model.ConfigPropertyConstants.SCANNER_TRIVY_SCAN_OS;
 import static org.testcontainers.containers.wait.strategy.Wait.forLogMessage;
 
-@RunWith(Parameterized.class)
-public class TrivyAnalysisTaskIntegrationTest extends PersistenceCapableTest {
+@Disabled("Pulling Trivy images is unreliable until https://github.com/aquasecurity/trivy/discussions/10425 is fully resolved.")
+class TrivyAnalysisTaskIntegrationTest extends PersistenceCapableTest {
 
-    @Parameterized.Parameters(name = "[{index}] trivyVersion={0}")
-    public static Collection<?> testParameters() {
-        return Arrays.asList(new Object[][]{
-                {"0.51.1"}, // Pre breaking change of Application#libraries -> Application#packages
-                {"0.51.2"}, // Post breaking change of Application#libraries -> Application#packages
-                {"latest"}
-        });
+    public static Collection<Arguments> testParameters() {
+        return Arrays.asList(
+                Arguments.of("0.51.1"), // Pre breaking change of Application#libraries -> Application#packages
+                Arguments.of("0.51.2"), // Post breaking change of Application#libraries -> Application#packages
+                Arguments.of("0.69.3")
+        );
     }
 
     private static String trivyCacheVolumeName;
-    private final String trivyVersion;
     private GenericContainer<?> trivyContainer;
 
-    public TrivyAnalysisTaskIntegrationTest(String trivyVersion) {
-        this.trivyVersion = trivyVersion;
-    }
-
-    @BeforeClass
+    @BeforeAll
     @SuppressWarnings("resource")
     public static void beforeClass() {
         final DockerClient dockerClient = DockerClientFactory.lazyClient();
@@ -85,12 +79,8 @@ public class TrivyAnalysisTaskIntegrationTest extends PersistenceCapableTest {
         trivyCacheVolumeName = response.getName();
     }
 
-    @Before
-    @Override
     @SuppressWarnings("resource")
-    public void before() throws Exception {
-        super.before();
-
+    private void initTrivyContainer(String trivyVersion) throws Exception {
         trivyContainer = new GenericContainer<>(DockerImageName.parse("aquasec/trivy:" + trivyVersion))
                 .withImagePullPolicy(PullPolicy.alwaysPull())
                 .withCommand("server --cache-dir /tmp/cache --listen :8080 --token TrivyToken")
@@ -140,17 +130,15 @@ public class TrivyAnalysisTaskIntegrationTest extends PersistenceCapableTest {
         );
     }
 
-    @After
-    @Override
+    @AfterEach
     public void after() {
         if (trivyContainer != null) {
             trivyContainer.stop();
+            trivyContainer = null;
         }
-
-        super.after();
     }
 
-    @AfterClass
+    @AfterAll
     @SuppressWarnings("resource")
     public static void afterClass() {
         if (trivyCacheVolumeName != null) {
@@ -159,8 +147,10 @@ public class TrivyAnalysisTaskIntegrationTest extends PersistenceCapableTest {
         }
     }
 
-    @Test
-    public void test() {
+    @ParameterizedTest
+    @MethodSource("testParameters")
+    void test(String trivyVersion) throws Exception {
+        initTrivyContainer(trivyVersion);
         final var project = new Project();
         project.setName("acme-app");
         qm.persist(project);
@@ -244,8 +234,10 @@ public class TrivyAnalysisTaskIntegrationTest extends PersistenceCapableTest {
      * @see <a href="https://github.com/DependencyTrack/dependency-track/issues/2560">Add support for CycloneDX component properties</a>
      * @see <a href="https://github.com/DependencyTrack/dependency-track/issues/3369">Support component properties with Trivy</a>
      */
-    @Test
-    public void testWithPackageWithoutTrivyProperties() {
+    @ParameterizedTest
+    @MethodSource("testParameters")
+    void testWithPackageWithoutTrivyProperties(String trivyVersion) throws Exception {
+        initTrivyContainer(trivyVersion);
         final var project = new Project();
         project.setName("acme-app");
         qm.persist(project);
@@ -319,8 +311,10 @@ public class TrivyAnalysisTaskIntegrationTest extends PersistenceCapableTest {
      * @see <a href="https://github.com/DependencyTrack/dependency-track/issues/2560">Add support for CycloneDX component properties</a>
      * @see <a href="https://github.com/DependencyTrack/dependency-track/issues/3369">Support component properties with Trivy</a>
      */
-    @Test
-    public void testWithPackageWithTrivyProperties() {
+    @ParameterizedTest
+    @MethodSource("testParameters")
+    void testWithPackageWithTrivyProperties(String trivyVersion) throws Exception {
+        initTrivyContainer(trivyVersion);
         final var project = new Project();
         project.setName("acme-app");
         qm.persist(project);
@@ -412,8 +406,10 @@ public class TrivyAnalysisTaskIntegrationTest extends PersistenceCapableTest {
      * @see <a href="https://github.com/DependencyTrack/dependency-track/issues/2560">Add support for CycloneDX component properties</a>
      * @see <a href="https://github.com/DependencyTrack/dependency-track/issues/3369">Support component properties with Trivy</a>
      */
-    @Test
-    public void testWithPackageWithTrivyPropertiesWithDistroWithoutOS() {
+    @ParameterizedTest
+    @MethodSource("testParameters")
+    void testWithPackageWithTrivyPropertiesWithDistroWithoutOS(String trivyVersion) throws Exception {
+        initTrivyContainer(trivyVersion);
         final var project = new Project();
         project.setName("acme-app");
         qm.persist(project);
@@ -459,8 +455,11 @@ public class TrivyAnalysisTaskIntegrationTest extends PersistenceCapableTest {
         });
     }
 
-    @Test // https://github.com/DependencyTrack/dependency-track/issues/4376
-    public void testWithGoPackage() {
+    @ParameterizedTest
+    @MethodSource("testParameters")
+        // https://github.com/DependencyTrack/dependency-track/issues/4376
+    void testWithGoPackage(String trivyVersion) throws Exception {
+        initTrivyContainer(trivyVersion);
         final var project = new Project();
         project.setName("acme-app");
         qm.persist(project);
@@ -481,8 +480,8 @@ public class TrivyAnalysisTaskIntegrationTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void testIssue5216Regression() {
-        Assume.assumeTrue("latest".equals(trivyVersion));
+    void testIssue5216Regression() throws Exception {
+        initTrivyContainer("latest");
 
         final var project = new Project();
         project.setName("acme-app");

@@ -18,14 +18,14 @@
  */
 package org.dependencytrack.tasks;
 
-import com.github.tomakehurst.wiremock.junit.WireMockRule;
+import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
+import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import org.dependencytrack.PersistenceCapableTest;
 import org.dependencytrack.event.NistMirrorEvent;
 import org.dependencytrack.model.Severity;
 import org.dependencytrack.model.Vulnerability;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
@@ -36,20 +36,18 @@ import java.util.zip.GZIPOutputStream;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyUrl;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.apache.commons.io.IOUtils.resourceToByteArray;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.dependencytrack.model.ConfigPropertyConstants.VULNERABILITY_SOURCE_NVD_ENABLED;
 import static org.dependencytrack.model.ConfigPropertyConstants.VULNERABILITY_SOURCE_NVD_FEEDS_URL;
 
-public class NistMirrorTaskTest extends PersistenceCapableTest {
+@WireMockTest
+class NistMirrorTaskTest extends PersistenceCapableTest {
 
-    @Rule
-    public WireMockRule wireMock = new WireMockRule(options().dynamicPort());
-
-    @Before
-    public void setUp() {
+    @BeforeEach
+    public void setUp(WireMockRuntimeInfo wmRuntimeInfo) {
         qm.createConfigProperty(
                 VULNERABILITY_SOURCE_NVD_ENABLED.getGroupName(),
                 VULNERABILITY_SOURCE_NVD_ENABLED.getPropertyName(),
@@ -60,23 +58,23 @@ public class NistMirrorTaskTest extends PersistenceCapableTest {
         qm.createConfigProperty(
                 VULNERABILITY_SOURCE_NVD_FEEDS_URL.getGroupName(),
                 VULNERABILITY_SOURCE_NVD_FEEDS_URL.getPropertyName(),
-                wireMock.baseUrl(),
+                wmRuntimeInfo.getHttpBaseUrl(),
                 VULNERABILITY_SOURCE_NVD_FEEDS_URL.getPropertyType(),
                 VULNERABILITY_SOURCE_NVD_FEEDS_URL.getDescription()
         );
     }
 
     @Test
-    public void test() throws Exception {
+    void test() throws Exception {
         final byte[] gzippedFeedFileBytes = gzipResource("/unit/nvd/feed/nvdcve-2.0-2022.json");
 
-        wireMock.stubFor(get(anyUrl())
+        stubFor(get(anyUrl())
                 .willReturn(aResponse()
                         .withStatus(404)));
-        wireMock.stubFor(get(urlPathEqualTo("/json/cve/2.0/nvdcve-2.0-2022.json.gz"))
+        stubFor(get(urlPathEqualTo("/json/cve/2.0/nvdcve-2.0-2022.json.gz"))
                 .willReturn(aResponse()
                         .withBody(gzippedFeedFileBytes)));
-        wireMock.stubFor(get(urlPathEqualTo("/json/cve/2.0/nvdcve-2.0-2022.meta"))
+        stubFor(get(urlPathEqualTo("/json/cve/2.0/nvdcve-2.0-2022.meta"))
                 .willReturn(aResponse()
                         .withBody(resourceToByteArray("/unit/nvd/feed/nvdcve-2.0-2022.meta"))));
 
@@ -111,11 +109,11 @@ public class NistMirrorTaskTest extends PersistenceCapableTest {
                     assertThat(vuln.getCvssV2BaseScore()).isEqualByComparingTo("2.1");
                     assertThat(vuln.getCvssV2ExploitabilitySubScore()).isEqualByComparingTo("3.9");
                     assertThat(vuln.getCvssV2ImpactSubScore()).isEqualByComparingTo("2.9");
-                    assertThat(vuln.getCvssV2Vector()).isEqualTo("(AV:L/AC:L/Au:N/C:P/I:N/A:N)");
+                    assertThat(vuln.getCvssV2Vector()).isEqualTo("AV:L/AC:L/Au:N/C:P/I:N/A:N");
                     assertThat(vuln.getCvssV3BaseScore()).isEqualByComparingTo("6.5");
                     assertThat(vuln.getCvssV3ExploitabilitySubScore()).isEqualByComparingTo("2.0");
                     assertThat(vuln.getCvssV3ImpactSubScore()).isEqualByComparingTo("4.0");
-                    assertThat(vuln.getCvssV3Vector()).isEqualTo("CVSS:3.0/AV:L/AC:L/PR:L/UI:N/S:C/C:H/I:N/A:N");
+                    assertThat(vuln.getCvssV3Vector()).isEqualTo("CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:C/C:H/I:N/A:N");
                     assertThat(vuln.getSeverity()).isEqualTo(Severity.MEDIUM);
                 },
                 vuln -> {
@@ -135,11 +133,11 @@ public class NistMirrorTaskTest extends PersistenceCapableTest {
                     assertThat(vuln.getCvssV2BaseScore()).isEqualByComparingTo("2.1");
                     assertThat(vuln.getCvssV2ExploitabilitySubScore()).isEqualByComparingTo("3.9");
                     assertThat(vuln.getCvssV2ImpactSubScore()).isEqualByComparingTo("2.9");
-                    assertThat(vuln.getCvssV2Vector()).isEqualTo("(AV:L/AC:L/Au:N/C:P/I:N/A:N)");
+                    assertThat(vuln.getCvssV2Vector()).isEqualTo("AV:L/AC:L/Au:N/C:P/I:N/A:N");
                     assertThat(vuln.getCvssV3BaseScore()).isEqualByComparingTo("6.5");
                     assertThat(vuln.getCvssV3ExploitabilitySubScore()).isEqualByComparingTo("2.0");
                     assertThat(vuln.getCvssV3ImpactSubScore()).isEqualByComparingTo("4.0");
-                    assertThat(vuln.getCvssV3Vector()).isEqualTo("CVSS:3.0/AV:L/AC:L/PR:L/UI:N/S:C/C:H/I:N/A:N");
+                    assertThat(vuln.getCvssV3Vector()).isEqualTo("CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:C/C:H/I:N/A:N");
                     assertThat(vuln.getSeverity()).isEqualTo(Severity.MEDIUM);
                 },
                 vuln -> {
@@ -157,24 +155,26 @@ public class NistMirrorTaskTest extends PersistenceCapableTest {
                     assertThat(vuln.getCvssV2BaseScore()).isEqualByComparingTo("7.2");
                     assertThat(vuln.getCvssV2ExploitabilitySubScore()).isEqualByComparingTo("3.9");
                     assertThat(vuln.getCvssV2ImpactSubScore()).isEqualByComparingTo("10.0");
-                    assertThat(vuln.getCvssV2Vector()).isEqualTo("(AV:L/AC:L/Au:N/C:C/I:C/A:C)");
+                    assertThat(vuln.getCvssV2Vector()).isEqualTo("AV:L/AC:L/Au:N/C:C/I:C/A:C");
                     assertThat(vuln.getCvssV3BaseScore()).isEqualByComparingTo("6.8");
                     assertThat(vuln.getCvssV3ExploitabilitySubScore()).isEqualByComparingTo("0.9");
                     assertThat(vuln.getCvssV3ImpactSubScore()).isEqualByComparingTo("5.9");
-                    assertThat(vuln.getCvssV3Vector()).isEqualTo("CVSS:3.0/AV:P/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H");
-                    assertThat(vuln.getSeverity()).isEqualTo(Severity.MEDIUM);
+                    assertThat(vuln.getCvssV3Vector()).isEqualTo("CVSS:3.1/AV:P/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H");
+                    assertThat(vuln.getCvssV4Score()).isEqualByComparingTo("7.0");
+                    assertThat(vuln.getCvssV4Vector()).startsWith("CVSS:4.0/");
+                    assertThat(vuln.getSeverity()).isEqualTo(Severity.HIGH);
                 }
         );
     }
 
     @Test
-    public void testWithDuplicateCpes() throws Exception {
+    void testWithDuplicateCpes() throws Exception {
         final byte[] gzippedFeedFileBytes = gzipResource("/unit/nvd/feed/nvdcve-2.0-2021_duplicate-cpes.json");
 
-        wireMock.stubFor(get(anyUrl())
+        stubFor(get(anyUrl())
                 .willReturn(aResponse()
                         .withStatus(404)));
-        wireMock.stubFor(get(urlPathEqualTo("/json/cve/2.0/nvdcve-2.0-2021.json.gz"))
+        stubFor(get(urlPathEqualTo("/json/cve/2.0/nvdcve-2.0-2021.json.gz"))
                 .willReturn(aResponse()
                         .withBody(gzippedFeedFileBytes)));
 
