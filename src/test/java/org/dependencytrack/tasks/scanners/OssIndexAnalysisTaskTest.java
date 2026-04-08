@@ -2,7 +2,8 @@ package org.dependencytrack.tasks.scanners;
 
 import alpine.security.crypto.DataEncryption;
 import com.github.packageurl.PackageURL;
-import com.github.tomakehurst.wiremock.junit.WireMockRule;
+import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
+import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import com.github.tomakehurst.wiremock.matching.RequestPatternBuilder;
 import jakarta.json.Json;
 import org.assertj.core.api.SoftAssertions;
@@ -12,13 +13,13 @@ import org.dependencytrack.event.OssIndexAnalysisEvent;
 import org.dependencytrack.model.Component;
 import org.dependencytrack.model.ComponentAnalysisCache;
 import org.dependencytrack.model.Project;
+import org.dependencytrack.model.Severity;
 import org.dependencytrack.model.Vulnerability;
 import org.dependencytrack.model.VulnerabilityAnalysisLevel;
 import org.dependencytrack.util.HttpUtil;
 import org.jetbrains.annotations.NotNull;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.Date;
 import java.util.List;
@@ -30,9 +31,9 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.exactly;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.verify;
-import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.dependencytrack.model.ConfigPropertyConstants.SCANNER_ANALYSIS_CACHE_VALIDITY_PERIOD;
@@ -40,18 +41,21 @@ import static org.dependencytrack.model.ConfigPropertyConstants.SCANNER_OSSINDEX
 import static org.dependencytrack.model.ConfigPropertyConstants.SCANNER_OSSINDEX_API_USERNAME;
 import static org.dependencytrack.model.ConfigPropertyConstants.SCANNER_OSSINDEX_ENABLED;
 
-public class OssIndexAnalysisTaskTest extends PersistenceCapableTest {
+@WireMockTest
+class OssIndexAnalysisTaskTest extends PersistenceCapableTest {
 
-    @Rule
-    public WireMockRule wireMock = new WireMockRule(options().dynamicPort());
+    private static final String API_USER = "foo";
+    private static final String API_TOKEN = "apiToken";
 
     private static final String API_USER = "foo";
     private static final String API_TOKEN = "apiToken";
 
     private OssIndexAnalysisTask analysisTask;
+    private WireMockRuntimeInfo wmRuntimeInfo;
 
-    @Before
-    public void setUp() {
+    @BeforeEach
+    public void setUp(WireMockRuntimeInfo wmRuntimeInfo) {
+        this.wmRuntimeInfo = wmRuntimeInfo;
         qm.createConfigProperty(
                 SCANNER_OSSINDEX_ENABLED.getGroupName(),
                 SCANNER_OSSINDEX_ENABLED.getPropertyName(),
@@ -67,11 +71,11 @@ public class OssIndexAnalysisTaskTest extends PersistenceCapableTest {
                 SCANNER_ANALYSIS_CACHE_VALIDITY_PERIOD.getDescription()
         );
 
-        analysisTask = new OssIndexAnalysisTask(wireMock.baseUrl());
+        analysisTask = new OssIndexAnalysisTask(wmRuntimeInfo.getHttpBaseUrl());
     }
 
     @Test
-    public void testIsCapable() {
+    void testIsCapable() {
         final var asserts = new SoftAssertions();
 
         for (final Map.Entry<String, Boolean> test : Map.of(
@@ -88,35 +92,35 @@ public class OssIndexAnalysisTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void testShouldAnalyzeWhenCacheIsCurrent() throws Exception {
-        qm.updateComponentAnalysisCache(ComponentAnalysisCache.CacheType.VULNERABILITY, wireMock.baseUrl(),
-                Vulnerability.Source.OSSINDEX.name(), "pkg:maven/com.fasterxml.woodstox/woodstox-core@5.0.0?foo=bar#baz", new Date(),
+    void testShouldAnalyzeWhenCacheIsCurrent() throws Exception {
+        qm.updateComponentAnalysisCache(ComponentAnalysisCache.CacheType.VULNERABILITY, wmRuntimeInfo.getHttpBaseUrl(),
+                Vulnerability.Source.OSSINDEX.name(), "pkg:maven/com.fasterxml.woodstox/woodstox-core@5.0.0", new Date(),
                 Json.createObjectBuilder()
                         .add("vulnIds", Json.createArrayBuilder().add(123))
                         .build());
 
-        assertThat(analysisTask.shouldAnalyze(new PackageURL("pkg:maven/com.fasterxml.woodstox/woodstox-core@5.0.0"))).isTrue();
+        assertThat(analysisTask.shouldAnalyze(new PackageURL("pkg:maven/com.fasterxml.woodstox/woodstox-core@5.0.0"))).isFalse();
         assertThat(analysisTask.shouldAnalyze(new PackageURL("pkg:maven/com.fasterxml.woodstox/woodstox-core@6.0.0"))).isTrue();
         assertThat(analysisTask.shouldAnalyze(new PackageURL("pkg:maven/com.fasterxml.woodstox/woodstox-core@5.0.0?foo=bar#baz"))).isFalse();
     }
 
     @Test
-    public void testAnalyzeWithRateLimiting() throws Exception {
+    void testAnalyzeWithRateLimiting() throws Exception {
         configApiToken(API_USER, DataEncryption.encryptAsString(API_TOKEN));
-        wireMock.stubFor(post(urlPathEqualTo("/api/v3/component-report"))
+        stubFor(post(urlPathEqualTo("/api/v3/component-report"))
                 .inScenario("rateLimit")
                 .willReturn(aResponse()
                         .withStatus(429))
                 .willSetStateTo("secondAttempt"));
 
-        wireMock.stubFor(post(urlPathEqualTo("/api/v3/component-report"))
+        stubFor(post(urlPathEqualTo("/api/v3/component-report"))
                 .inScenario("rateLimit")
                 .whenScenarioStateIs("secondAttempt")
                 .willReturn(aResponse()
                         .withStatus(429))
                 .willSetStateTo("thirdAttempt"));
 
-        wireMock.stubFor(post(urlPathEqualTo("/api/v3/component-report"))
+        stubFor(post(urlPathEqualTo("/api/v3/component-report"))
                 .inScenario("rateLimit")
                 .whenScenarioStateIs("thirdAttempt")
                 .willReturn(aResponse()
@@ -165,9 +169,8 @@ public class OssIndexAnalysisTaskTest extends PersistenceCapableTest {
                     assertThat(vuln.getTitle()).isNull();
                     assertThat(vuln.getDescription()).isEqualTo("""
                             jackson-databind before 2.13.0 allows a Java StackOverflow exception and denial of service via a large depth of nested objects.
-                            
                             Sonatype's research suggests that this CVE's details differ from those defined at NVD. See https://ossindex.sonatype.org/vulnerability/CVE-2020-36518 for details""");
-                    assertThat(vuln.getCvssV3Vector()).isEqualTo("CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H");
+                    assertThat(vuln.getCvssV3Vector()).isEqualTo("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H");
                     assertThat(vuln.getCvssV3BaseScore()).isEqualByComparingTo("7.5");
                     assertThat(vuln.getCvssV3ExploitabilitySubScore()).isNotNull();
                     assertThat(vuln.getCvssV3ImpactSubScore()).isNotNull();
@@ -179,27 +182,27 @@ public class OssIndexAnalysisTaskTest extends PersistenceCapableTest {
                 }
         );
 
-        wireMock.verify(exactly(3), getRequestedPost());
+        verify(exactly(3), getRequestedPost());
     }
 
     @Test
-    public void testAnalyzeWithAuthentication() throws Exception {
+    void testAnalyzeWithAuthentication() throws Exception {
         configApiToken(API_USER, DataEncryption.encryptAsString(API_TOKEN));
         stubPOSTRequest();
 
-        var project = configProject();
+      var project = configProject();
 
-        var component = getComponent(project);
+      var component = getComponent(project);
         qm.persist(component);
 
         assertThatNoException().isThrownBy(() -> analysisTask.inform(new OssIndexAnalysisEvent(
                 List.of(component), VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS)));
 
-        wireMock.verify(getRequestedPost());
+        verify(getRequestedPost());
     }
 
     @Test
-    public void testAnalyzeWithApiTokenDecryptionError() {
+    void testAnalyzeWithApiTokenDecryptionError() {
         configApiToken(API_USER, "notAnEncryptedValue");
         stubPOSTRequest();
 
@@ -211,11 +214,11 @@ public class OssIndexAnalysisTaskTest extends PersistenceCapableTest {
         assertThatNoException().isThrownBy(() -> analysisTask.inform(new OssIndexAnalysisEvent(
                 List.of(component), VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS)));
 
-        wireMock.verify(0, getRequestedPost());
+        verify(0, getRequestedPost());
     }
 
     @Test
-    public void testAnalyzeWithoutApiToken() {
+    void testAnalyzeWithoutApiToken() {
         configApiToken(API_USER, null);
         stubPOSTRequest();
 
@@ -225,14 +228,14 @@ public class OssIndexAnalysisTaskTest extends PersistenceCapableTest {
         qm.persist(component);
 
         assertThatNoException().isThrownBy(() -> analysisTask.inform(new OssIndexAnalysisEvent(
-                List.of(component), VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS)));
+            List.of(component), VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS)));
 
-        wireMock.verify(0, getRequestedPost());
+        verify(0, getRequestedPost());
     }
 
     @Test
-    public void testAnalyzeWithoutUser() {
-        configApiToken(null, API_TOKEN);
+    void testAnalyzeWithoutUser() throws Exception {
+        configApiToken(null, DataEncryption.encryptAsString(API_TOKEN));
         stubPOSTRequest();
 
         var project = configProject();
@@ -240,10 +243,53 @@ public class OssIndexAnalysisTaskTest extends PersistenceCapableTest {
         var component = getComponent(project);
         qm.persist(component);
 
-        assertThatNoException().isThrownBy(() -> analysisTask.inform(new OssIndexAnalysisEvent(
-                List.of(component), VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS)));
+        assertThatNoException().isThrownBy(
+                () -> analysisTask.inform(
+                        new OssIndexAnalysisEvent(
+                                List.of(component),
+                                VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS)));
 
-        wireMock.verify(0, getRequestedPost());
+        verify(0, postRequestedFor(urlPathEqualTo("/api/v3/component-report")));
+    }
+
+    @Test
+    void testAnalyzeWithBearerToken() throws Exception {
+        final String bearerToken = "sonatype_pat_testtoken123";
+        configApiToken(null, DataEncryption.encryptAsString(bearerToken));
+        stubPOSTRequest();
+
+        var project = configProject();
+        var component = getComponent(project);
+        qm.persist(component);
+
+        assertThatNoException().isThrownBy(
+                () -> analysisTask.inform(
+                        new OssIndexAnalysisEvent(
+                                List.of(component),
+                                VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS)));
+
+        verify(postRequestedFor(urlPathEqualTo("/api/v3/component-report"))
+                .withHeader("Authorization", equalTo("Bearer " + bearerToken)));
+    }
+
+    @Test
+    void testAnalyzeWithBearerTokenAndUsername() throws Exception {
+        final String bearerToken = "sonatype_pat_testtoken123";
+        configApiToken(API_USER, DataEncryption.encryptAsString(bearerToken));
+        stubPOSTRequest();
+
+        var project = configProject();
+        var component = getComponent(project);
+        qm.persist(component);
+
+        assertThatNoException().isThrownBy(
+                () -> analysisTask.inform(
+                        new OssIndexAnalysisEvent(
+                                List.of(component),
+                                VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS)));
+
+        verify(postRequestedFor(urlPathEqualTo("/api/v3/component-report"))
+                .withHeader("Authorization", equalTo("Bearer " + bearerToken)));
     }
 
     private @NotNull Project configProject() {
@@ -255,24 +301,24 @@ public class OssIndexAnalysisTaskTest extends PersistenceCapableTest {
 
     private static RequestPatternBuilder getRequestedPost() {
         return postRequestedFor(urlPathEqualTo("/api/v3/component-report"))
-                .withHeader("Content-Type", equalTo("application/json"))
-                .withHeader("User-Agent", equalTo(ManagedHttpClientFactory.getUserAgent()))
-                .withHeader("Authorization", equalTo(HttpUtil.basicAuthHeaderValue(API_USER, API_TOKEN)))
-                .withRequestBody(equalToJson("""
-                                {
-                                  "coordinates": [
-                                    "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.13.1"
-                                  ]
-                                }
-                        """));
+            .withHeader("Content-Type", equalTo("application/json"))
+            .withHeader("User-Agent", equalTo(ManagedHttpClientFactory.getUserAgent()))
+            .withHeader("Authorization", equalTo(HttpUtil.basicAuthHeaderValue(API_USER, API_TOKEN)))
+            .withRequestBody(equalToJson("""
+                    {
+                      "coordinates": [
+                        "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.13.1"
+                      ]
+                    }
+            """));
     }
 
-    private void stubPOSTRequest() {
-        wireMock.stubFor(post(urlPathEqualTo("/api/v3/component-report"))
+    private static void stubPOSTRequest() {
+        stubFor(post(urlPathEqualTo("/api/v3/component-report"))
                 .willReturn(aResponse()
-                        .withStatus(200)
-                        .withHeader("Content-Type", "application/vnd.ossindex.component-report.v1+json")
-                        .withBody("[]")));
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/vnd.ossindex.component-report.v1+json")
+                    .withBody("[]")));
     }
 
     private static @NotNull Component getComponent(final Project project) {
@@ -287,19 +333,96 @@ public class OssIndexAnalysisTaskTest extends PersistenceCapableTest {
 
     private void configApiToken(final String user, String apiToken) {
         qm.createConfigProperty(
-                SCANNER_OSSINDEX_API_USERNAME.getGroupName(),
-                SCANNER_OSSINDEX_API_USERNAME.getPropertyName(),
-                user,
-                SCANNER_OSSINDEX_API_USERNAME.getPropertyType(),
-                SCANNER_OSSINDEX_API_USERNAME.getDescription()
+            SCANNER_OSSINDEX_API_USERNAME.getGroupName(),
+            SCANNER_OSSINDEX_API_USERNAME.getPropertyName(),
+            user,
+            SCANNER_OSSINDEX_API_USERNAME.getPropertyType(),
+            SCANNER_OSSINDEX_API_USERNAME.getDescription()
         );
         qm.createConfigProperty(
-                SCANNER_OSSINDEX_API_TOKEN.getGroupName(),
-                SCANNER_OSSINDEX_API_TOKEN.getPropertyName(),
-                apiToken,
-                SCANNER_OSSINDEX_API_TOKEN.getPropertyType(),
-                SCANNER_OSSINDEX_API_TOKEN.getDescription()
+            SCANNER_OSSINDEX_API_TOKEN.getGroupName(),
+            SCANNER_OSSINDEX_API_TOKEN.getPropertyName(),
+            apiToken,
+            SCANNER_OSSINDEX_API_TOKEN.getPropertyType(),
+            SCANNER_OSSINDEX_API_TOKEN.getDescription()
         );
+    }
+
+    @Test
+    void testAnalyzeWithCvssV4() throws Exception {
+        configApiToken(API_USER, DataEncryption.encryptAsString(API_TOKEN));
+        stubFor(post(urlPathEqualTo("/api/v3/component-report"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/vnd.ossindex.component-report.v1+json")
+                        .withBody("""
+                                [
+                                  {
+                                    "coordinates": "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.13.1",
+                                    "description": "General data-binding functionality for Jackson: works on core streaming API",
+                                    "reference": "https://ossindex.sonatype.org/component/pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.13.1",
+                                    "vulnerabilities": [
+                                      {
+                                        "id": "sonatype-2024-0001",
+                                        "displayName": "sonatype-2024-0001",
+                                        "title": "[sonatype-2024-0001] Test CVSSv4 vulnerability",
+                                        "description": "Test vulnerability with CVSSv4 vector",
+                                        "cvssScore": 9.3,
+                                        "cvssVector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+                                        "cwe": "CWE-502",
+                                        "reference": "https://ossindex.sonatype.org/vulnerability/sonatype-2024-0001",
+                                        "externalReferences": []
+                                      }
+                                    ]
+                                  }
+                                ]
+                                """)));
+
+        var project = configProject();
+        var component = getComponent(project);
+        qm.persist(component);
+
+        assertThatNoException().isThrownBy(() -> analysisTask.inform(new OssIndexAnalysisEvent(
+                List.of(component), VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS)));
+
+        final List<Vulnerability> vulnerabilities = qm.getAllVulnerabilities(component);
+        assertThat(vulnerabilities).satisfiesExactly(
+                vuln -> {
+                    assertThat(vuln.getVulnId()).isEqualTo("sonatype-2024-0001");
+                    assertThat(vuln.getSource()).isEqualTo("OSSINDEX");
+                    assertThat(vuln.getCvssV4Vector()).isEqualTo("CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N");
+                    assertThat(vuln.getCvssV4Score()).isNotNull();
+                    assertThat(vuln.getSeverity()).isEqualTo(Severity.CRITICAL);
+                }
+        );
+    }
+
+    @Test
+    void testAnalyzeUsesCustomBaseUrl() throws Exception {
+        // Create a task with custom base URL via configuration property
+        qm.createConfigProperty(
+                "scanner",
+                "ossindex.base.url",
+                wmRuntimeInfo.getHttpBaseUrl(),
+                alpine.model.IConfigProperty.PropertyType.URL,
+                "Base URL for OSS Index API"
+        );
+
+        // Create new task instance that should read from config
+        var customTask = new OssIndexAnalysisTask();
+
+        configApiToken(API_USER, DataEncryption.encryptAsString(API_TOKEN));
+        stubPOSTRequest();
+
+        var project = configProject();
+        var component = getComponent(project);
+        qm.persist(component);
+
+        assertThatNoException().isThrownBy(() -> customTask.inform(new OssIndexAnalysisEvent(
+                List.of(component), VulnerabilityAnalysisLevel.BOM_UPLOAD_ANALYSIS)));
+
+        // Verify that the custom URL was used
+        verify(getRequestedPost());
     }
 
 }

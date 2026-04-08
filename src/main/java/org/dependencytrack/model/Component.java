@@ -28,6 +28,11 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.json.JsonObject;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import org.apache.commons.lang3.StringUtils;
 import org.dependencytrack.model.validation.ValidSpdxExpression;
 import org.dependencytrack.parser.cyclonedx.util.ModelConverter;
@@ -35,11 +40,6 @@ import org.dependencytrack.persistence.converter.OrganizationalContactsJsonConve
 import org.dependencytrack.persistence.converter.OrganizationalEntityJsonConverter;
 import org.dependencytrack.resources.v1.serializers.CustomPackageURLSerializer;
 
-import jakarta.json.JsonObject;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 import javax.jdo.annotations.Column;
 import javax.jdo.annotations.Convert;
 import javax.jdo.annotations.Element;
@@ -87,6 +87,7 @@ import java.util.UUID;
                 @Persistent(name = "group"),
                 @Persistent(name = "name"),
                 @Persistent(name = "version"),
+                @Persistent(name = "internal"),
                 @Persistent(name = "cpe"),
                 @Persistent(name = "purl"),
                 @Persistent(name = "purlCoordinates"),
@@ -182,6 +183,12 @@ public class Component implements Serializable {
     @JsonDeserialize(using = TrimmedStringDeserializer.class)
     @Pattern(regexp = RegexSequence.Definition.PRINTABLE_CHARS, message = "The version may only contain printable characters")
     private String version;
+
+    @Persistent
+    @Column(name = "SCOPE", jdbcType = "VARCHAR",length = 255)
+    @Size(max = 255)
+    @Index(name = "COMPONENT_SCOPE_IDX")
+    private Scope scope;
 
     @Persistent
     @Column(name = "CLASSIFIER", jdbcType = "VARCHAR")
@@ -919,6 +926,13 @@ public class Component implements Serializable {
         this.expandDependencyGraph = expandDependencyGraph;
     }
 
+    public Scope getScope() {
+        return scope;
+    }
+
+    public void setScope(Scope scope) {
+        this.scope = scope;
+    }
     @Override
     public String toString() {
         if (getPurl() != null) {

@@ -18,12 +18,12 @@
  */
 package org.dependencytrack.tasks.scanners;
 
-import alpine.model.IConfigProperty;
 import alpine.notification.Notification;
 import alpine.notification.NotificationService;
 import alpine.notification.Subscriber;
 import alpine.notification.Subscription;
 import alpine.security.crypto.DataEncryption;
+import jakarta.json.Json;
 import org.apache.http.HttpHeaders;
 import org.assertj.core.api.SoftAssertions;
 import org.dependencytrack.PersistenceCapableTest;
@@ -34,15 +34,14 @@ import org.dependencytrack.model.Project;
 import org.dependencytrack.model.Severity;
 import org.dependencytrack.model.Vulnerability;
 import org.dependencytrack.model.VulnerabilityAnalysisLevel;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockserver.integration.ClientAndServer;
 import org.mockserver.model.Header;
 
-import jakarta.json.Json;
 import javax.jdo.Query;
 import java.util.ArrayList;
 import java.util.Date;
@@ -58,54 +57,59 @@ import static org.dependencytrack.model.ConfigPropertyConstants.SCANNER_VULNDB_O
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
-public class VulnDBAnalysisTaskTest extends PersistenceCapableTest {
+class VulnDBAnalysisTaskTest extends PersistenceCapableTest {
 
     private static ClientAndServer mockServer;
+    private static final Subscription SUBSCRIPTION = new Subscription(NotificationSubscriber.class);
 
-    @BeforeClass
+    @BeforeAll
     public static void beforeClass() {
-        NotificationService.getInstance().subscribe(new Subscription(NotificationSubscriber.class));
+        NotificationService.getInstance().subscribe(SUBSCRIPTION);
         mockServer = ClientAndServer.startClientAndServer(1080);
     }
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
-        qm.createConfigProperty(SCANNER_VULNDB_ENABLED.getGroupName(),
+        qm.createConfigProperty(
+                SCANNER_VULNDB_ENABLED.getGroupName(),
                 SCANNER_VULNDB_ENABLED.getPropertyName(),
                 "true",
-                IConfigProperty.PropertyType.BOOLEAN,
-                "vulndb");
-        qm.createConfigProperty(SCANNER_ANALYSIS_CACHE_VALIDITY_PERIOD.getGroupName(),
+                SCANNER_VULNDB_ENABLED.getPropertyType(),
+                SCANNER_VULNDB_ENABLED.getDescription());
+        qm.createConfigProperty(
+                SCANNER_ANALYSIS_CACHE_VALIDITY_PERIOD.getGroupName(),
                 SCANNER_ANALYSIS_CACHE_VALIDITY_PERIOD.getPropertyName(),
                 "86400",
-                IConfigProperty.PropertyType.STRING,
-                "cache");
-        qm.createConfigProperty(SCANNER_VULNDB_OAUTH1_CONSUMER_KEY.getGroupName(),
+                SCANNER_ANALYSIS_CACHE_VALIDITY_PERIOD.getPropertyType(),
+                SCANNER_ANALYSIS_CACHE_VALIDITY_PERIOD.getDescription());
+        qm.createConfigProperty(
+                SCANNER_VULNDB_OAUTH1_CONSUMER_KEY.getGroupName(),
                 SCANNER_VULNDB_OAUTH1_CONSUMER_KEY.getPropertyName(),
-                DataEncryption.encryptAsString("secret"),
-                IConfigProperty.PropertyType.STRING,
-                "secret");
-        qm.createConfigProperty(SCANNER_VULNDB_OAUTH1_CONSUMER_SECRET.getGroupName(),
+                "secret",
+                SCANNER_VULNDB_OAUTH1_CONSUMER_KEY.getPropertyType(),
+                SCANNER_VULNDB_OAUTH1_CONSUMER_KEY.getDescription());
+        qm.createConfigProperty(
+                SCANNER_VULNDB_OAUTH1_CONSUMER_SECRET.getGroupName(),
                 SCANNER_VULNDB_OAUTH1_CONSUMER_SECRET.getPropertyName(),
                 DataEncryption.encryptAsString("secret"),
-                IConfigProperty.PropertyType.STRING,
-                "secret");
+                SCANNER_VULNDB_OAUTH1_CONSUMER_SECRET.getPropertyType(),
+                SCANNER_VULNDB_OAUTH1_CONSUMER_SECRET.getDescription());
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
         mockServer.reset();
         NOTIFICATIONS.clear();
     }
 
-    @AfterClass
+    @AfterAll
     public static void afterClass() {
         mockServer.stop();
-        NotificationService.getInstance().unsubscribe(new Subscription(NotificationSubscriber.class));
+        NotificationService.getInstance().unsubscribe(SUBSCRIPTION);
     }
 
     @Test
-    public void testIsCapable() {
+    void testIsCapable() {
         final var asserts = new SoftAssertions();
 
         for (final Map.Entry<String, Boolean> test : Map.of(
@@ -121,7 +125,7 @@ public class VulnDBAnalysisTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void testAnalyzeWithOneIssue() {
+    void testAnalyzeWithOneIssue() {
         mockServer
                 .when(request()
                         .withMethod("GET")
@@ -246,7 +250,7 @@ public class VulnDBAnalysisTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void testAnalyzeWithNoIssue() {
+    void testAnalyzeWithNoIssue() {
         mockServer
                 .when(request()
                         .withMethod("GET")
@@ -254,15 +258,7 @@ public class VulnDBAnalysisTaskTest extends PersistenceCapableTest {
                         .withHeader(new Header("X-User-Agent", "Dependency Track (https://github.com/DependencyTrack/dependency-track)"))
                         .withQueryStringParameter("cpe", "cpe:2.3:h:siemens:sppa-t3000_ses3000:-:*:*:*:*:*:*:*"))
                 .respond(response()
-                        .withStatusCode(200)
-                        .withHeader(HttpHeaders.CONTENT_TYPE, "application/vnd.api+json")
-                        .withBody("""                                
-                                {
-                                  "current_page": 1,
-                                  "total_entries": 1,
-                                  "results": []
-                                }
-                                """));
+                        .withStatusCode(404));
 
         var project = new Project();
         project.setName("acme-app");
@@ -294,7 +290,7 @@ public class VulnDBAnalysisTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void testAnalyzeWithCurrentCache() {
+    void testAnalyzeWithCurrentCache() {
         var vuln = new Vulnerability();
         vuln.setVulnId("VULNDB-001");
         vuln.setSource(Vulnerability.Source.VULNDB);

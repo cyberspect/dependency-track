@@ -33,8 +33,8 @@ import org.dependencytrack.model.Vulnerability;
 import org.dependencytrack.model.Vulnerability.Source;
 import org.dependencytrack.model.VulnerabilityAlias;
 import org.dependencytrack.model.VulnerableSoftware;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
@@ -45,12 +45,12 @@ import static org.dependencytrack.model.ConfigPropertyConstants.VULNERABILITY_SO
 import static org.dependencytrack.model.ConfigPropertyConstants.VULNERABILITY_SOURCE_GITHUB_ADVISORIES_API_URL;
 import static org.dependencytrack.model.ConfigPropertyConstants.VULNERABILITY_SOURCE_GITHUB_ADVISORIES_ENABLED;
 
-public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
+class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
 
     private final ObjectMapper jsonMapper = new JsonMapper()
             .registerModule(new JavaTimeModule());
 
-    @Before
+    @BeforeEach
     public void beforeEach() {
         qm.createConfigProperty(
                 VULNERABILITY_SOURCE_GITHUB_ADVISORIES_ENABLED.getGroupName(),
@@ -73,7 +73,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void testProcessAdvisory() throws Exception {
+    void testProcessAdvisory() throws Exception {
         qm.createConfigProperty(
                 VULNERABILITY_SOURCE_GITHUB_ADVISORIES_ALIAS_SYNC_ENABLED.getGroupName(),
                 VULNERABILITY_SOURCE_GITHUB_ADVISORIES_ALIAS_SYNC_ENABLED.getPropertyName(),
@@ -142,7 +142,69 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void testProcessAdvisoryWithAliasSyncDisabled() throws Exception {
+    void testProcessAdvisoryWithCvssV4() throws Exception {
+        qm.createConfigProperty(
+                VULNERABILITY_SOURCE_GITHUB_ADVISORIES_ALIAS_SYNC_ENABLED.getGroupName(),
+                VULNERABILITY_SOURCE_GITHUB_ADVISORIES_ALIAS_SYNC_ENABLED.getPropertyName(),
+                "false",
+                VULNERABILITY_SOURCE_GITHUB_ADVISORIES_ALIAS_SYNC_ENABLED.getPropertyType(),
+                VULNERABILITY_SOURCE_GITHUB_ADVISORIES_ALIAS_SYNC_ENABLED.getDescription());
+
+        final var advisory = jsonMapper.readValue(/* language=JSON */ """
+                {
+                  "id": "GHSA-test-cvss-v4v4",
+                  "ghsaId": "GHSA-test-cvss-v4v4",
+                  "identifiers": [
+                    {
+                      "type": "CVE",
+                      "value": "CVE-2099-99999"
+                    }
+                  ],
+                  "severity": "HIGH",
+                  "cvssSeverities": {
+                    "cvssV4": {
+                      "vectorString": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+                      "score": 9.3
+                    },
+                    "cvssV3": {
+                      "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+                      "score": 9.8
+                    }
+                  },
+                  "publishedAt": "2024-01-15T00:00:00Z",
+                  "updatedAt": "2024-02-20T00:00:00Z",
+                  "vulnerabilities": {
+                    "edges": [
+                      {
+                        "node": {
+                          "package": {
+                            "ecosystem": "maven",
+                            "name": "com.example:test-lib"
+                          },
+                          "vulnerableVersionRange": "<=1.0.0"
+                        }
+                      }
+                    ]
+                  }
+                }
+                """, SecurityAdvisory.class);
+
+        final var task = new GitHubAdvisoryMirrorTask();
+        final boolean createdOrUpdated = task.processAdvisory(advisory);
+        assertThat(createdOrUpdated).isTrue();
+
+        final Vulnerability vuln = qm.getVulnerabilityByVulnId(Source.GITHUB, "GHSA-test-cvss-v4v4");
+        assertThat(vuln).isNotNull();
+        assertThat(vuln.getCvssV4Vector()).isNotNull();
+        assertThat(vuln.getCvssV4Score()).isNotNull();
+        assertThat(vuln.getCvssV3Vector()).isEqualTo("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H");
+        assertThat(vuln.getCvssV3BaseScore()).isNotNull();
+        // Severity comes from explicit "severity":"HIGH" field, not CVSS scores
+        assertThat(vuln.getSeverity()).isEqualTo(Severity.HIGH);
+    }
+
+    @Test
+    void testProcessAdvisoryWithAliasSyncDisabled() throws Exception {
         qm.createConfigProperty(
                 VULNERABILITY_SOURCE_GITHUB_ADVISORIES_ALIAS_SYNC_ENABLED.getGroupName(),
                 VULNERABILITY_SOURCE_GITHUB_ADVISORIES_ALIAS_SYNC_ENABLED.getPropertyName(),
@@ -199,7 +261,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void testProcessAdvisoryVulnerableVersionRanges() throws Exception {
+    void testProcessAdvisoryVulnerableVersionRanges() throws Exception {
         var vs1 = new VulnerableSoftware();
         vs1.setPurl("pkg:maven/com.fasterxml.jackson.core/jackson-databind");
         vs1.setPurlType("maven");
@@ -231,8 +293,8 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
         var existingVuln = new Vulnerability();
         existingVuln.setVulnId("GHSA-57j2-w4cx-62h2");
         existingVuln.setSource(Source.GITHUB);
-        existingVuln.setVulnerableSoftware(List.of(vs1, vs2, vs3));
         existingVuln = qm.createVulnerability(existingVuln, false);
+        existingVuln.setVulnerableSoftware(List.of(vs1, vs2, vs3));
         qm.updateAffectedVersionAttribution(existingVuln, vs1, Source.OSV);
         qm.updateAffectedVersionAttribution(existingVuln, vs2, Source.OSV);
         qm.updateAffectedVersionAttribution(existingVuln, vs3, Source.GITHUB);
@@ -348,7 +410,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldNotRetryOnResponseWithCode403() {
+    void shouldNotRetryOnResponseWithCode403() {
         final var httpResponse = new BasicHttpResponse(403);
         final var httpContext = HttpClientContext.create();
 
@@ -358,7 +420,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldRetryOnResponseWithCode429() {
+    void shouldRetryOnResponseWithCode429() {
         final var httpResponse = new BasicHttpResponse(429);
         final var httpContext = HttpClientContext.create();
 
@@ -368,7 +430,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldRetryOnResponseWithCode503() {
+    void shouldRetryOnResponseWithCode503() {
         final var httpResponse = new BasicHttpResponse(503);
         final var httpContext = HttpClientContext.create();
 
@@ -378,7 +440,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldRetryUpToSixAttempts() {
+    void shouldRetryUpToSixAttempts() {
         final var httpResponse = new BasicHttpResponse(503);
         final var httpContext = HttpClientContext.create();
 
@@ -392,7 +454,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldRetryOnResponseWithCode403AndRetryAfterHeader() {
+    void shouldRetryOnResponseWithCode403AndRetryAfterHeader() {
         final var httpResponse = new BasicHttpResponse(403);
         httpResponse.addHeader("retry-after", /* 1min */ 60);
         final var httpContext = HttpClientContext.create();
@@ -403,7 +465,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldRetryOnResponseWithCode429AndRetryAfterHeader() {
+    void shouldRetryOnResponseWithCode429AndRetryAfterHeader() {
         final var httpResponse = new BasicHttpResponse(429);
         httpResponse.addHeader("retry-after", /* 1min */ 60);
         final var httpContext = HttpClientContext.create();
@@ -414,7 +476,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldNotRetryWhenRetryAfterExceedsMaxDelay() {
+    void shouldNotRetryWhenRetryAfterExceedsMaxDelay() {
         final var httpResponse = new BasicHttpResponse(403);
         httpResponse.addHeader("retry-after", /* 3min */ 180);
         final var httpContext = HttpClientContext.create();
@@ -429,7 +491,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldRetryOnResponseWithCode403AndRateLimitHeaders() {
+    void shouldRetryOnResponseWithCode403AndRateLimitHeaders() {
         final var httpResponse = new BasicHttpResponse(403);
         httpResponse.addHeader("x-ratelimit-remaining", 6);
         httpResponse.addHeader("x-ratelimit-limit", 666);
@@ -442,7 +504,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldRetryOnResponseWithCode429AndRateLimitHeaders() {
+    void shouldRetryOnResponseWithCode429AndRateLimitHeaders() {
         final var httpResponse = new BasicHttpResponse(429);
         httpResponse.addHeader("x-ratelimit-remaining", 6);
         httpResponse.addHeader("x-ratelimit-limit", 666);
@@ -455,7 +517,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldRetryWhenLimitResetIsShorterThanMaxDelay() {
+    void shouldRetryWhenLimitResetIsShorterThanMaxDelay() {
         final var httpResponse = new BasicHttpResponse(429);
         httpResponse.addHeader("x-ratelimit-remaining", 0);
         httpResponse.addHeader("x-ratelimit-limit", 666);
@@ -468,7 +530,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldNotRetryWhenLimitResetExceedsMaxDelay() {
+    void shouldNotRetryWhenLimitResetExceedsMaxDelay() {
         final var httpResponse = new BasicHttpResponse(429);
         httpResponse.addHeader("x-ratelimit-remaining", 0);
         httpResponse.addHeader("x-ratelimit-limit", 666);
@@ -481,7 +543,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldUseRetryAfterHeaderForRetryDelay() {
+    void shouldUseRetryAfterHeaderForRetryDelay() {
         final var httpResponse = new BasicHttpResponse(429);
         httpResponse.addHeader("retry-after", /* 1min 6sec */ 66);
         final var httpContext = HttpClientContext.create();
@@ -492,7 +554,7 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldUseLimitResetHeaderForRetryDelay() {
+    void shouldUseLimitResetHeaderForRetryDelay() {
         final var httpResponse = new BasicHttpResponse(429);
         httpResponse.addHeader("x-ratelimit-remaining", 0);
         httpResponse.addHeader("x-ratelimit-limit", 666);
@@ -505,13 +567,159 @@ public class GitHubAdvisoryMirrorTaskTest extends PersistenceCapableTest {
     }
 
     @Test
-    public void shouldUseOneSecondAsDefaultRetryDelay() {
+    void shouldUseOneSecondAsDefaultRetryDelay() {
         final var httpResponse = new BasicHttpResponse(503);
         final var httpContext = HttpClientContext.create();
 
         final var retryStrategy = new GitHubAdvisoryMirrorTask.HttpRequestRetryStrategy();
         final TimeValue retryDelay = retryStrategy.getRetryInterval(httpResponse, 1, httpContext);
         assertThat(retryDelay.toSeconds()).isEqualTo(1);
+    }
+
+    @Test
+    void testProcessAdvisoryWithEpss() throws Exception {
+        // Real values from GitHub GraphQL API for GHSA-57j2-w4cx-62h2 (CVE-2020-36518):
+        //   "percentage": 0.00514  →  epssScore  (exploitation probability, 0.0-1.0)
+        //   "percentile": 0.66009  →  epssPercentile (relative rank, 0.0-1.0)
+        final var advisory = jsonMapper.readValue(/* language=JSON */ """
+                {
+                  "id": "GHSA-57j2-w4cx-62h2",
+                  "ghsaId": "GHSA-57j2-w4cx-62h2",
+                  "severity": "HIGH",
+                  "publishedAt": "2022-03-12T00:00:36Z",
+                  "updatedAt": "2024-03-15T00:24:56Z",
+                  "epss": {
+                    "percentage": 0.00514,
+                    "percentile": 0.66009
+                  },
+                  "vulnerabilities": {
+                    "edges": [
+                      {
+                        "node": {
+                          "package": {
+                            "ecosystem": "maven",
+                            "name": "com.fasterxml.jackson.core:jackson-databind"
+                          },
+                          "vulnerableVersionRange": "<=2.13.2.0"
+                        }
+                      }
+                    ]
+                  }
+                }
+                """, SecurityAdvisory.class);
+
+        final var task = new GitHubAdvisoryMirrorTask();
+        final boolean createdOrUpdated = task.processAdvisory(advisory);
+        assertThat(createdOrUpdated).isTrue();
+
+        final Vulnerability vuln = qm.getVulnerabilityByVulnId(Source.GITHUB, "GHSA-57j2-w4cx-62h2");
+        assertThat(vuln).isNotNull();
+        assertThat(vuln.getEpssScore()).isNotNull();
+        assertThat(vuln.getEpssScore().doubleValue()).isCloseTo(0.00514, Offset.offset(0.00001));
+        assertThat(vuln.getEpssPercentile()).isNotNull();
+        assertThat(vuln.getEpssPercentile().doubleValue()).isCloseTo(0.66009, Offset.offset(0.00001));
+    }
+
+    @Test
+    void testProcessAdvisoryEpssUpdatedWhenChanged() throws Exception {
+        // Seed the DB with GHSA-57j2-w4cx-62h2's real EPSS values (as of 2024-03-15).
+        var existingVuln = new Vulnerability();
+        existingVuln.setVulnId("GHSA-57j2-w4cx-62h2");
+        existingVuln.setSource(Source.GITHUB);
+        existingVuln.setEpssScore(new java.math.BigDecimal("0.00514"));
+        existingVuln.setEpssPercentile(new java.math.BigDecimal("0.66009"));
+        existingVuln.setPublished(java.util.Date.from(java.time.Instant.parse("2022-03-12T00:00:36Z")));
+        existingVuln.setUpdated(java.util.Date.from(java.time.Instant.parse("2024-03-15T00:24:56Z")));
+        qm.createVulnerability(existingVuln, false);
+
+        // Process a later advisory with different EPSS values (real values from GHSA-44wm-f244-xhp3,
+        // CVE-2024-28219, reused here as "updated" values for the same advisory under test).
+        final var advisory = jsonMapper.readValue(/* language=JSON */ """
+                {
+                  "id": "GHSA-57j2-w4cx-62h2",
+                  "ghsaId": "GHSA-57j2-w4cx-62h2",
+                  "severity": "HIGH",
+                  "publishedAt": "2022-03-12T00:00:36Z",
+                  "updatedAt": "2025-01-01T00:00:00Z",
+                  "epss": {
+                    "percentage": 0.00284,
+                    "percentile": 0.51483
+                  },
+                  "vulnerabilities": {
+                    "edges": [
+                      {
+                        "node": {
+                          "package": {
+                            "ecosystem": "maven",
+                            "name": "com.fasterxml.jackson.core:jackson-databind"
+                          },
+                          "vulnerableVersionRange": "<=2.13.2.0"
+                        }
+                      }
+                    ]
+                  }
+                }
+                """, SecurityAdvisory.class);
+
+        final var task = new GitHubAdvisoryMirrorTask();
+        task.processAdvisory(advisory);
+
+        qm.getPersistenceManager().evictAll();
+        final Vulnerability vuln = qm.getVulnerabilityByVulnId(Source.GITHUB, "GHSA-57j2-w4cx-62h2");
+        assertThat(vuln).isNotNull();
+        assertThat(vuln.getEpssScore()).isNotNull();
+        assertThat(vuln.getEpssScore().doubleValue()).isCloseTo(0.00284, Offset.offset(0.00001));
+        assertThat(vuln.getEpssPercentile()).isNotNull();
+        assertThat(vuln.getEpssPercentile().doubleValue()).isCloseTo(0.51483, Offset.offset(0.00001));
+    }
+
+    @Test
+    void testProcessAdvisoryEpssNotClearedWhenAbsent() throws Exception {
+        // Seed the DB with real EPSS values for GHSA-57j2-w4cx-62h2 (CVE-2020-36518, as of 2024-03-15).
+        var existingVuln = new Vulnerability();
+        existingVuln.setVulnId("GHSA-57j2-w4cx-62h2");
+        existingVuln.setSource(Source.GITHUB);
+        existingVuln.setEpssScore(new java.math.BigDecimal("0.00514"));
+        existingVuln.setEpssPercentile(new java.math.BigDecimal("0.66009"));
+        existingVuln.setPublished(java.util.Date.from(java.time.Instant.parse("2022-03-12T00:00:36Z")));
+        existingVuln.setUpdated(java.util.Date.from(java.time.Instant.parse("2024-03-15T00:24:56Z")));
+        qm.createVulnerability(existingVuln, false);
+
+        // Process an advisory without an epss field (updatedAt advances to trigger the update path).
+        final var advisory = jsonMapper.readValue(/* language=JSON */ """
+                {
+                  "id": "GHSA-57j2-w4cx-62h2",
+                  "ghsaId": "GHSA-57j2-w4cx-62h2",
+                  "severity": "HIGH",
+                  "publishedAt": "2022-03-12T00:00:36Z",
+                  "updatedAt": "2025-01-01T00:00:00Z",
+                  "vulnerabilities": {
+                    "edges": [
+                      {
+                        "node": {
+                          "package": {
+                            "ecosystem": "maven",
+                            "name": "com.fasterxml.jackson.core:jackson-databind"
+                          },
+                          "vulnerableVersionRange": "<=2.13.2.0"
+                        }
+                      }
+                    ]
+                  }
+                }
+                """, SecurityAdvisory.class);
+
+        final var task = new GitHubAdvisoryMirrorTask();
+        task.processAdvisory(advisory);
+
+        qm.getPersistenceManager().evictAll();
+        final Vulnerability vuln = qm.getVulnerabilityByVulnId(Source.GITHUB, "GHSA-57j2-w4cx-62h2");
+        assertThat(vuln).isNotNull();
+        // EPSS data must be preserved when the advisory does not include EPSS
+        assertThat(vuln.getEpssScore()).isNotNull();
+        assertThat(vuln.getEpssScore().doubleValue()).isCloseTo(0.00514, Offset.offset(0.00001));
+        assertThat(vuln.getEpssPercentile()).isNotNull();
+        assertThat(vuln.getEpssPercentile().doubleValue()).isCloseTo(0.66009, Offset.offset(0.00001));
     }
 
 }

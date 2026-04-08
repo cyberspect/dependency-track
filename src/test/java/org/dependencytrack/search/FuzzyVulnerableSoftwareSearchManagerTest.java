@@ -6,11 +6,12 @@ import org.dependencytrack.model.Component;
 import org.dependencytrack.model.VulnerableSoftware;
 import org.dependencytrack.persistence.QueryManager;
 import org.dependencytrack.search.document.VulnerableSoftwareDocument;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import us.springett.parsers.cpe.Cpe;
 import us.springett.parsers.cpe.CpeParser;
 import us.springett.parsers.cpe.exceptions.CpeEncodingException;
@@ -26,10 +27,8 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 import static org.dependencytrack.search.IndexConstants.VULNERABLESOFTWARE_UUID;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
@@ -38,7 +37,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-public class FuzzyVulnerableSoftwareSearchManagerTest {
+class FuzzyVulnerableSoftwareSearchManagerTest {
     private static final File INDEX_DIRECTORY;
     private static final File INDEX_TEMP_DIRECTORY;
     private FuzzyVulnerableSoftwareSearchManager toTest = new FuzzyVulnerableSoftwareSearchManager(true);
@@ -51,7 +50,7 @@ public class FuzzyVulnerableSoftwareSearchManagerTest {
         INDEX_TEMP_DIRECTORY = new File(INDEX_DIRECTORY.getAbsolutePath() + "_tmp");
     }
 
-    @BeforeClass
+    @BeforeAll
     public static void saveVsIndex() throws IOException {
         VulnerableSoftwareIndexer.getInstance().close();
         if (INDEX_TEMP_DIRECTORY.exists()) {
@@ -65,27 +64,27 @@ public class FuzzyVulnerableSoftwareSearchManagerTest {
         vs.setCpe23("cpe:2.3:a:libexpat_project:libexpat:2.2.2:*:*:*:*:*:*:*");
         vs.setProduct("libexpat");
         VulnerableSoftwareIndexer.getInstance().add(new VulnerableSoftwareDocument(vs));
-        VulnerableSoftwareIndexer.getInstance().commit();
+        commitIndex();
     }
-    @AfterClass
+    @AfterAll
     public static void restoreVsIndex() throws IOException {
         VulnerableSoftwareIndexer.getInstance().close();
         if (INDEX_DIRECTORY.exists()) {
             FileUtils.deleteDirectory(INDEX_DIRECTORY);
         }
         if (INDEX_TEMP_DIRECTORY.exists()) {
-            assertTrue(INDEX_TEMP_DIRECTORY.renameTo(INDEX_DIRECTORY));
+            Assertions.assertTrue(INDEX_TEMP_DIRECTORY.renameTo(INDEX_DIRECTORY));
         }
     }
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
         qm = mock(QueryManager.class);
         when(qm.getObjectByUuid(any(), anyString())).thenReturn(VALUE_TO_MATCH);
     }
 
     @Test
-    public void fuzzyAnalysis() throws CpeParsingException, CpeValidationException {
+    void fuzzyAnalysis() throws CpeParsingException, CpeValidationException {
         us.springett.parsers.cpe.Cpe justThePart = new us.springett.parsers.cpe.Cpe(Part.APPLICATION, "*", "*", "*", "*", "*", "*", "*", "*", "*", "*");
         // wildcard all components after part to constrain fuzzing to components of same type e.g. application, operating-system
         String fuzzyTerm = FuzzyVulnerableSoftwareSearchManager.getLuceneCpeRegexp(justThePart.toCpe23FS());
@@ -99,13 +98,13 @@ public class FuzzyVulnerableSoftwareSearchManagerTest {
         component.setCpe("cpe:2.3:a:libexpat_project:libexpat1:2.0.0:*:*:*:*:*:*:*");
         Cpe cpe = CpeParser.parse(component.getCpe());
         List<VulnerableSoftware> vs = toTest.fuzzyAnalysis(qm, component, cpe);
-        assertFalse(vs.isEmpty());
+        Assertions.assertFalse(vs.isEmpty());
         assertSame(VALUE_TO_MATCH, vs.get(0));
 
     }
 
     @Test
-    public void getLuceneCpeRegexp() throws CpeValidationException, CpeEncodingException {
+    void getLuceneCpeRegexp() throws CpeValidationException, CpeEncodingException {
         us.springett.parsers.cpe.Cpe os = new us.springett.parsers.cpe.Cpe( Part.OPERATING_SYSTEM, "vendor", "product", "1\\.0", "2", "33","en", "inside", "Vista", "x86", "other");
 
         assertEquals("cpe23:/cpe\\:2\\.3\\:a\\:.*\\:.*\\:.*\\:.*\\:.*\\:.*\\:.*\\:.*\\:.*\\:.*/", FuzzyVulnerableSoftwareSearchManager.getLuceneCpeRegexp("cpe:2.3:a:*:*:*:*:*:*:*:*:*:*"));
@@ -114,19 +113,19 @@ public class FuzzyVulnerableSoftwareSearchManagerTest {
     }
 
     @Test
-    @Ignore ("This demonstrates assumptions about CPE matching but does not exercise code")
-    public void cpeMatching() {
+    @Disabled("This demonstrates assumptions about CPE matching but does not exercise code")
+    void cpeMatching() {
         String lucene = FuzzyVulnerableSoftwareSearchManager.getLuceneCpeRegexp("cpe:2.3:a:*:file:*:*:*:*:*:*:*:*");
         String regex = lucene.substring(7, lucene.length()-1);
         Pattern pattern = Pattern.compile(regex);
-        assertFalse(pattern.matcher(
+        Assertions.assertFalse(pattern.matcher(
         "cpe:2.3:a:dell:emc_vnx2_operating_environment:*:*:*:*:*:file:*:*").matches());
-        assertTrue(pattern.matcher(
+        Assertions.assertTrue(pattern.matcher(
                 "cpe:2.3:a:*:file:*:*:*:*:*:file:*:*").matches());
     }
 
     @Test
-    public void fuzzySearchDropsMissingEntities() {
+    void fuzzySearchDropsMissingEntities() {
         var qm = mock(QueryManager.class);
 
         var id1 = UUID.randomUUID();
@@ -161,7 +160,7 @@ public class FuzzyVulnerableSoftwareSearchManagerTest {
     }
 
     @Test
-    public void fuzzySearchReturnsEmptyListIfNoResults() {
+    void fuzzySearchReturnsEmptyListIfNoResults() {
         var qm = mock(QueryManager.class);
 
         var searchResult = mock(SearchResult.class);
@@ -180,5 +179,9 @@ public class FuzzyVulnerableSoftwareSearchManagerTest {
         verify(qm, never()).getObjectByUuid(any(), anyString());
 
         assertEquals(0, fuzzyResult.size());
+    }
+
+    private static void commitIndex() {
+        IndexManagerTestUtil.commitIndex(VulnerableSoftwareIndexer.getInstance());
     }
 }
