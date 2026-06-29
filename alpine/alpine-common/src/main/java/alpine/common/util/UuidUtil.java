@@ -14,13 +14,11 @@
  * limitations under the License.
  *
  * SPDX-License-Identifier: Apache-2.0
- * Copyright (c) OWASP Foundation. All Rights Reserved.
+ * Copyright (c) Steve Springett. All Rights Reserved.
  */
 package alpine.common.util;
 
 import java.util.UUID;
-
-import org.dependencytrack.search.document.SearchDocument;
 
 /**
  * A collection of useful UUID utilities.
