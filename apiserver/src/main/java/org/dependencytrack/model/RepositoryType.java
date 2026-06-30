@@ -28,7 +28,6 @@ import com.github.packageurl.PackageURL;
  */
 public enum RepositoryType {
 
-    CPAN,
     MAVEN,
     NPM,
     GEM,
@@ -46,7 +45,6 @@ public enum RepositoryType {
 
     /**
      * Returns a RepositoryType for the specified PackageURL.
-     *
      * @param packageURL a package URL
      * @return a RepositoryType
      */

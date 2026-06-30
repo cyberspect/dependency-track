@@ -40,10 +40,6 @@ import org.dependencytrack.persistence.converter.OrganizationalContactsJsonConve
 import org.dependencytrack.persistence.converter.OrganizationalEntityJsonConverter;
 import org.dependencytrack.resources.v1.serializers.CustomPackageURLSerializer;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 import javax.jdo.annotations.Column;
 import javax.jdo.annotations.Convert;
 import javax.jdo.annotations.Element;
@@ -84,8 +80,6 @@ import java.util.UUID;
                 @Persistent(name = "name"),
                 @Persistent(name = "authors"),
                 @Persistent(name = "publisher"),
-                @Persistent(name = "manufacturer"),
-                @Persistent(name = "supplier"),
                 @Persistent(name = "group"),
                 @Persistent(name = "name"),
                 @Persistent(name = "description"),
@@ -94,7 +88,6 @@ import java.util.UUID;
                 @Persistent(name = "cpe"),
                 @Persistent(name = "purl"),
                 @Persistent(name = "swidTagId"),
-                @Persistent(name = "directDependencies"),
                 @Persistent(name = "uuid"),
                 @Persistent(name = "parent"),
                 @Persistent(name = "children"),
@@ -118,9 +111,6 @@ import java.util.UUID;
         }),
         @FetchGroup(name = "METRICS_UPDATE", members = {
                 @Persistent(name = "id"),
-                @Persistent(name = "parent"),
-                @Persistent(name = "collectionLogic"),
-                @Persistent(name = "collectionTag"),
                 @Persistent(name = "lastInheritedRiskScore"),
                 @Persistent(name = "uuid")
         }),
@@ -219,15 +209,6 @@ public class Project implements Serializable {
     private Classifier classifier;
 
     @Persistent
-    @Column(name = "COLLECTION_LOGIC", jdbcType = "VARCHAR", allowsNull = "true")
-    @Extension(vendorName = "datanucleus", key = "enum-check-constraint", value = "true")
-    private ProjectCollectionLogic collectionLogic;
-
-    @Persistent(defaultFetchGroup = "true")
-    @Column(name = "COLLECTION_TAG", allowsNull = "true")
-    private Tag collectionTag;
-
-    @Persistent
     @Index(name = "PROJECT_CPE_IDX")
     @Column(name = "CPE")
     @Size(max = 255)
@@ -312,9 +293,6 @@ public class Project implements Serializable {
     @Column(name = "LAST_RISKSCORE", allowsNull = "true") // New column, must allow nulls on existing databases))
     private Double lastInheritedRiskScore;
 
-    /**
-     * Convenience field which will contain the date of the last vulnerability analysis of the {@link Bom} components
-     */
     @Persistent
     @Column(name = "LAST_VULNERABILITY_ANALYSIS", allowsNull = "true")
     private Date lastVulnerabilityAnalysis;
@@ -356,7 +334,6 @@ public class Project implements Serializable {
 
     private transient String bomRef;
 
-    private transient String bomRef;
     private transient ProjectMetrics metrics;
 
     private transient List<ProjectVersion> versions;
@@ -443,26 +420,6 @@ public class Project implements Serializable {
 
     public void setClassifier(Classifier classifier) {
         this.classifier = classifier;
-    }
-
-    public ProjectCollectionLogic getCollectionLogic() {
-        return collectionLogic == null
-                ? ProjectCollectionLogic.NONE
-                : collectionLogic;
-    }
-
-    public void setCollectionLogic(ProjectCollectionLogic collectionLogic) {
-        this.collectionLogic = collectionLogic != ProjectCollectionLogic.NONE
-                ? collectionLogic
-                : null;
-    }
-
-    public Tag getCollectionTag() {
-        return collectionTag;
-    }
-
-    public void setCollectionTag(Tag collectionTag) {
-        this.collectionTag = collectionTag;
     }
 
     public String getCpe() {
@@ -566,14 +523,6 @@ public class Project implements Serializable {
         this.lastBomImportFormat = lastBomImportFormat;
     }
 
-    public Date getLastVulnerabilityAnalysis() {
-        return lastVulnerabilityAnalysis;
-    }
-
-    public void setLastVulnerabilityAnalysis(Date lastVulnerabilityAnalysis) {
-        this.lastVulnerabilityAnalysis = lastVulnerabilityAnalysis;
-    }
-
     public Double getLastInheritedRiskScore() {
         return lastInheritedRiskScore;
     }
@@ -617,23 +566,6 @@ public class Project implements Serializable {
         if (active && this.inactiveSince != null) {
             this.inactiveSince = null;
         }
-    }
-
-    public String getBomRef() {
-        return bomRef;
-    }
-
-    public void setBomRef(String bomRef) {
-        this.bomRef = bomRef;
-    }
-
-    @JsonProperty("isLatest")
-    public boolean isLatest() {
-        return isLatest;
-    }
-
-    public void setIsLatest(Boolean latest) {
-        isLatest = latest != null ? latest : false;
     }
 
     public String getBomRef() {

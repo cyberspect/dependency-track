@@ -25,8 +25,6 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import javax.jdo.annotations.Column;
 import javax.jdo.annotations.IdGeneratorStrategy;
 import javax.jdo.annotations.Index;
@@ -86,11 +84,6 @@ public class Repository implements Serializable {
     @Column(name = "INTERNAL")
     @NotNull
     private Boolean internal; // New column, must allow nulls on existing databases
-
-    //New column to determine if authentication is required for a repository
-    @Persistent
-    @Column(name = "AUTHENTICATIONREQUIRED", allowsNull = "true")
-    private Boolean authenticationRequired;
 
     @Persistent
     @Column(name = "AUTHENTICATIONREQUIRED", allowsNull = "false", defaultValue = "false")
@@ -174,14 +167,6 @@ public class Repository implements Serializable {
 
     public void setInternal(Boolean internal) {
         this.internal = internal;
-    }
-
-    public Boolean isAuthenticationRequired() {
-        return authenticationRequired;
-    }
-
-    public void setAuthenticationRequired(Boolean authenticationRequired) {
-        this.authenticationRequired = authenticationRequired;
     }
 
     public String getUsername() {

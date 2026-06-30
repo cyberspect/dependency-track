@@ -24,10 +24,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.dependencytrack.model.Repository;
 import org.dependencytrack.model.RepositoryType;
 
-import alpine.common.logging.Logger;
-import alpine.persistence.PaginatedResult;
-import alpine.resources.AlpineRequest;
-import alpine.security.crypto.DataEncryption;
+import javax.jdo.PersistenceManager;
+import javax.jdo.Query;
+import java.util.List;
+import java.util.UUID;
 
 public class RepositoryQueryManager extends QueryManager {
 
@@ -128,7 +128,7 @@ public class RepositoryQueryManager extends QueryManager {
         }
         int order = 0;
         final List<Repository> existingRepos = getAllRepositoriesOrdered(type);
-        if (existingRepos != null && !existingRepos.isEmpty()) {
+        if (existingRepos != null) {
             for (final Repository existing : existingRepos) {
                 if (existing.getResolutionOrder() > order) {
                     order = existing.getResolutionOrder();
