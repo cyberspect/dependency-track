@@ -27,10 +27,6 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 import javax.jdo.annotations.Column;
 import javax.jdo.annotations.ForeignKey;
 import javax.jdo.annotations.ForeignKeyAction;
@@ -49,15 +45,6 @@ import java.util.UUID;
  * @since 4.0.0
  */
 @PersistenceCapable
-@FetchGroups(value = {
-        @FetchGroup(name = "NOTIFICATION", members = {
-                @Persistent(name = "policy"),
-                @Persistent(name = "subject"),
-                @Persistent(name = "operator"),
-                @Persistent(name = "value"),
-                @Persistent(name = "uuid")
-        })
-})
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class PolicyCondition implements Serializable {

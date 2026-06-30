@@ -52,13 +52,6 @@ import java.util.UUID;
  * @since 4.0.0
  */
 @PersistenceCapable
-@FetchGroups(value = {
-        @FetchGroup(name = "NOTIFICATION", members = {
-                @Persistent(name = "name"),
-                @Persistent(name = "violationState"),
-                @Persistent(name = "uuid")
-        })
-})
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Policy implements Serializable {
@@ -72,10 +65,6 @@ public class Policy implements Serializable {
         INFO,
         WARN,
         FAIL
-    }
-
-    public enum FetchGroup {
-        NOTIFICATION
     }
 
     @PrimaryKey

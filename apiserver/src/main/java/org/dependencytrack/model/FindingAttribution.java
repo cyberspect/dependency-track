@@ -23,7 +23,6 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 
-import jakarta.validation.constraints.NotNull;
 import javax.jdo.annotations.Column;
 import javax.jdo.annotations.ForeignKey;
 import javax.jdo.annotations.ForeignKeyAction;
@@ -115,7 +114,7 @@ public class FindingAttribution implements Serializable {
         this.analyzerIdentity = analyzerIdentity;
         this.attributedOn = new Date();
         this.alternateIdentifier = alternateIdentifier;
-        this.referenceUrl = maybeTrimUrl(referenceUrl);
+        this.referenceUrl = referenceUrl;
     }
 
     public long getId() {
@@ -180,7 +179,7 @@ public class FindingAttribution implements Serializable {
     }
 
     public void setReferenceUrl(String referenceUrl) {
-        this.referenceUrl = maybeTrimUrl(referenceUrl);
+        this.referenceUrl = referenceUrl;
     }
 
     public Date getDeletedAt() {
