@@ -25,7 +25,6 @@ package org.dependencytrack.model;
  * @since 3.0.0
  */
 public enum Classifier {
-    NONE,
     APPLICATION,
     FRAMEWORK,
     LIBRARY,

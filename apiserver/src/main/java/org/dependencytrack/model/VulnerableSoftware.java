@@ -175,13 +175,6 @@ public class VulnerableSoftware implements ICpe, Serializable {
 
     private transient List<AffectedVersionAttribution> affectedVersionAttributions;
 
-    public boolean hasVersionRange() {
-        return (versionStartIncluding != null && !versionStartIncluding.isBlank())
-                || (versionStartExcluding != null && !versionStartExcluding.isBlank())
-                || (versionEndExcluding != null && !versionEndExcluding.isBlank())
-                || (versionEndIncluding != null && !versionEndIncluding.isBlank());
-    }
-
     public long getId() {
         return id;
     }
@@ -416,7 +409,6 @@ public class VulnerableSoftware implements ICpe, Serializable {
     public List<AffectedVersionAttribution> getAffectedVersionAttributions() {
         return affectedVersionAttributions;
     }
-
     public void setAffectedVersionAttributions(List<AffectedVersionAttribution> affectedVersionAttributions) {
         this.affectedVersionAttributions = affectedVersionAttributions;
     }
