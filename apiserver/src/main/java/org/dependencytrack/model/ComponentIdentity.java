@@ -42,7 +42,6 @@ public class ComponentIdentity {
         COMPONENT,
         SERVICE
     }
-    private Scope scope;
 
     private final ObjectType objectType;
     private PackageURL purl;
