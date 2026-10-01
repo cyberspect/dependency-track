@@ -28,12 +28,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # tag=v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # tag=v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up JDK
-        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # tag=v5.5.0
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # tag=v6.0.0
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -66,6 +66,9 @@ jobs:
   build-container:
     runs-on: ubuntu-latest
     permissions:
+      artifact-metadata: write # Required to create the artifact storage record.
+      attestations: write # Required to generate SLSA build provenance.
+      id-token: write # Required for keyless signing of SLSA build provenance.
       security-events: write # Required to upload trivy's SARIF output
     needs:
       - build-java
@@ -79,7 +82,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # tag=v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # tag=v7.0.1
         with:
           persist-credentials: false
 
@@ -90,16 +93,16 @@ jobs:
           path: target
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # tag=v4.2.0
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # tag=v4.3.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # tag=v4.2.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # tag=v4.3.0
         id: buildx
         with:
           install: true
 
       - name: Login to Docker.io
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # tag=v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # tag=v4.6.0
         if: ${{ inputs.publish-container }}
         with:
           registry: docker.io
@@ -130,8 +133,10 @@ jobs:
           fi
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
           echo "tags-alpine=${TAGS_ALPINE}" >> $GITHUB_OUTPUT
+          echo "image=${IMAGE_NAME}" >> $GITHUB_OUTPUT
 
       - name: Build multi-arch Container Image
+        id: push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # tag=v7.3.0
         with:
           tags: ${{ steps.tags.outputs.tags }}
@@ -144,7 +149,16 @@ jobs:
           context: .
           file: src/main/docker/Dockerfile
 
+      - name: Generate SLSA Build Provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # tag=v4.2.2
+        if: ${{ inputs.publish-container }}
+        with:
+          subject-name: ${{ steps.tags.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
       - name: Build Alpine multi-arch Container Image
+        id: push-alpine
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # tag=v7.3.0
         with:
           tags: ${{ steps.tags.outputs.tags-alpine }}
@@ -156,3 +170,11 @@ jobs:
           push: ${{ inputs.publish-container }}
           context: .
           file: src/main/docker/Dockerfile.alpine
+
+      - name: Generate Alpine SLSA Build Provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # tag=v4.2.2
+        if: ${{ inputs.publish-container }}
+        with:
+          subject-name: ${{ steps.tags.outputs.image }}
+          subject-digest: ${{ steps.push-alpine.outputs.digest }}
+          push-to-registry: true
