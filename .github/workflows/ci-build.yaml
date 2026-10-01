@@ -3,16 +3,15 @@ name: Build CI
 on:
   push:
     branches:
-      - 'master'          # Default branch
-      - 'feature-**'      # Feature branches
-      - '[0-9]+.[0-9]+.x' # Release branches
+      - '4.14.x'     # Release branch
+      - 'feature-**' # Feature branches
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
   pull_request:
     branches:
-      - 'master'          # Default branch
-      - 'feature-**'      # Feature branches
+      - '4.14.x'     # Release branch
+      - 'feature-**' # Feature branches
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -24,11 +23,11 @@ jobs:
   call-build:
     uses: ./.github/workflows/_meta-build.yaml
     with:
-      app-version: "snapshot"
-      publish-container: ${{ github.ref_name == 'master' || startsWith(github.ref_name, 'feature-') }}
+      app-version: "4-snapshot"
+      publish-container: ${{ github.ref_name == '4.14.x' || startsWith(github.ref_name, 'feature-') }}
       ref-name: ${{ github.ref_name }}
     permissions:
       security-events: write # Required to upload trivy's SARIF output
     secrets:
-      registry-0-usr: ${{ secrets.HUB_USERNAME }}
-      registry-0-psw: ${{ secrets.HUB_ACCESSS_TOKEN }}
+      registry-0-usr: ${{ secrets.DOCKER_HUB_USERNAME }}
+      registry-0-psw: ${{ secrets.DOCKER_HUB_TOKEN }}

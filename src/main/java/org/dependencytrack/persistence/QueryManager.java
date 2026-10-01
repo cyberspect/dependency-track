@@ -806,19 +806,23 @@ public class QueryManager extends AlpineQueryManager {
     }
 
     public Vulnerability getVulnerabilityByVulnId(String source, String vulnId) {
-        return getVulnerabilityQueryManager().getVulnerabilityByVulnId(source, vulnId, false);
+        return getVulnerabilityQueryManager().getVulnerabilityByVulnId(source, vulnId, false, true);
     }
 
     public Vulnerability getVulnerabilityByVulnId(String source, String vulnId, boolean includeVulnerableSoftware) {
-        return getVulnerabilityQueryManager().getVulnerabilityByVulnId(source, vulnId, includeVulnerableSoftware);
+        return getVulnerabilityQueryManager().getVulnerabilityByVulnId(source, vulnId, includeVulnerableSoftware, true);
+    }
+
+    public Vulnerability getVulnerabilityByVulnId(String source, String vulnId, boolean includeVulnerableSoftware, boolean includeComponentsAndAliases) {
+        return getVulnerabilityQueryManager().getVulnerabilityByVulnId(source, vulnId, includeVulnerableSoftware, includeComponentsAndAliases);
     }
 
     public Vulnerability getVulnerabilityByVulnId(Vulnerability.Source source, String vulnId) {
-        return getVulnerabilityQueryManager().getVulnerabilityByVulnId(source, vulnId, false);
+        return getVulnerabilityQueryManager().getVulnerabilityByVulnId(source, vulnId, false, true);
     }
 
     public Vulnerability getVulnerabilityByVulnId(Vulnerability.Source source, String vulnId, boolean includeVulnerableSoftware) {
-        return getVulnerabilityQueryManager().getVulnerabilityByVulnId(source, vulnId, includeVulnerableSoftware);
+        return getVulnerabilityQueryManager().getVulnerabilityByVulnId(source, vulnId, includeVulnerableSoftware, true);
     }
 
     public void addVulnerability(Vulnerability vulnerability, Component component, AnalyzerIdentity analyzerIdentity) {
@@ -903,6 +907,10 @@ public class QueryManager extends AlpineQueryManager {
                                                  final VulnerableSoftware vulnerableSoftware,
                                                  final Vulnerability.Source source) {
         return getVulnerabilityQueryManager().hasAffectedVersionAttribution(vulnerability, vulnerableSoftware, source);
+    }
+
+    public boolean hasVulnerabilities(final Project project) {
+        return getVulnerabilityQueryManager().hasVulnerabilities(project);
     }
 
     public void synchronizeVulnerableSoftware(
@@ -1064,8 +1072,8 @@ public class QueryManager extends AlpineQueryManager {
         return getVulnerabilityQueryManager().getVulnerabilities(component, includeSuppressed);
     }
 
-    public List<Component> getAllVulnerableComponents(Project project, Vulnerability vulnerability, boolean includeSuppressed) {
-        return getVulnerabilityQueryManager().getAllVulnerableComponents(project, vulnerability, includeSuppressed);
+    public List<Component> getAllVulnerableComponents(Project project, Vulnerability vulnerability) {
+        return getVulnerabilityQueryManager().getAllVulnerableComponents(project, vulnerability);
     }
 
     public List<Vulnerability> getAllVulnerabilities(Component component) {
@@ -1144,6 +1152,17 @@ public class QueryManager extends AlpineQueryManager {
                                  AnalysisJustification analysisJustification, AnalysisResponse analysisResponse,
                                  String analysisDetails, Boolean isSuppressed) {
         return getFindingsQueryManager().makeAnalysis(component, vulnerability, analysisState, analysisJustification, analysisResponse, analysisDetails, isSuppressed);
+    }
+
+    public Analysis updateAnalysis(
+            Analysis analysis,
+            AnalysisState analysisState,
+            AnalysisJustification analysisJustification,
+            AnalysisResponse analysisResponse,
+            String analysisDetails,
+            Boolean isSuppressed) {
+        return getFindingsQueryManager().updateAnalysis(
+                analysis, analysisState, analysisJustification, analysisResponse, analysisDetails, isSuppressed);
     }
 
     public AnalysisComment makeAnalysisComment(Analysis analysis, String comment, String commenter) {
