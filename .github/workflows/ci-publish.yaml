@@ -23,7 +23,7 @@ jobs:
             exit 1
           fi
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # tag=v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # tag=v7.0.0
         with:
           persist-credentials: false
 
@@ -44,8 +44,8 @@ jobs:
     permissions:
       security-events: write # Required to upload trivy's SARIF output
     secrets:
-      registry-0-usr: ${{ secrets.HUB_USERNAME }}
-      registry-0-psw: ${{ secrets.HUB_ACCESSS_TOKEN }}
+      registry-0-usr: ${{ secrets.DOCKER_HUB_USERNAME }}
+      registry-0-psw: ${{ secrets.DOCKER_HUB_TOKEN }}
 
   update-github-release:
     runs-on: ubuntu-latest
@@ -56,12 +56,12 @@ jobs:
       - call-build
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # tag=v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # tag=v7.0.0
         with:
           persist-credentials: false
 
       - name: Download Artifacts
-        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # tag=v8.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # tag=v8.0.1
         with:
           name: assembled-wars
           path: target
@@ -107,4 +107,5 @@ jobs:
           VERSION: ${{ needs.read-version.outputs.version }}
         run: |-
           gh release edit "${VERSION}" \
-            --draft=false
+            --draft=false \
+            --latest=false
