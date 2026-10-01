@@ -23,7 +23,7 @@ jobs:
             exit 1
           fi
       - name: Checkout Repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # tag=v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # tag=v7.0.1
         with:
           persist-credentials: false
 
@@ -42,6 +42,9 @@ jobs:
       publish-container: true
       ref-name: ${{ github.ref_name }}
     permissions:
+      artifact-metadata: write # Required to create the artifact storage record.
+      attestations: write # Required to generate SLSA build provenance.
+      id-token: write # Required for keyless signing of SLSA build provenance.
       security-events: write # Required to upload trivy's SARIF output
     secrets:
       registry-0-usr: ${{ secrets.DOCKER_HUB_USERNAME }}
@@ -50,13 +53,16 @@ jobs:
   update-github-release:
     runs-on: ubuntu-latest
     permissions:
+      artifact-metadata: write # Required to create the artifact storage record.
+      attestations: write # Required to generate SLSA build provenance.
       contents: write # Required to update GitHub release assets and notes
+      id-token: write # Required for keyless signing of SLSA build provenance.
     needs:
       - read-version
       - call-build
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # tag=v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # tag=v7.0.1
         with:
           persist-credentials: false
 
@@ -76,6 +82,21 @@ jobs:
           echo "# SHA512" >> checksums.txt
           sha512sum dependency-track-apiserver.jar dependency-track-bundled.jar >> checksums.txt
           popd
+
+      - name: Generate SLSA Build Provenance
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # tag=v4.2.2
+        with:
+          subject-path: |-
+            target/dependency-track-apiserver.jar
+            target/dependency-track-bundled.jar
+            target/bom.json
+
+      - name: Prepare SLSA Build Provenance Asset
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: |-
+          cp "${BUNDLE_PATH}" target/dependency-track.intoto.jsonl
 
       - name: Update Release
         env:
@@ -98,6 +119,7 @@ jobs:
             --clobber \
             target/dependency-track-apiserver.jar \
             target/dependency-track-bundled.jar \
+            target/dependency-track.intoto.jsonl \
             target/checksums.txt \
             target/bom.json
 

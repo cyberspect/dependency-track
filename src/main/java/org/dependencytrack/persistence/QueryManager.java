@@ -65,6 +65,7 @@ import org.dependencytrack.model.PortfolioMetrics;
 import org.dependencytrack.model.Project;
 import org.dependencytrack.model.ProjectMetrics;
 import org.dependencytrack.model.ProjectProperty;
+import org.dependencytrack.model.ProjectVersion;
 import org.dependencytrack.model.Repository;
 import org.dependencytrack.model.RepositoryMetaComponent;
 import org.dependencytrack.model.RepositoryType;
@@ -396,6 +397,10 @@ public class QueryManager extends AlpineQueryManager {
 
     public Project getLatestProjectVersion(final String name) {
         return getProjectQueryManager().getLatestProjectVersion(name);
+    }
+
+    public List<ProjectVersion> getProjectVersions(final Project project) {
+        return getProjectQueryManager().getProjectVersions(project);
     }
 
     public PaginatedResult getProjects(final Team team, final boolean excludeInactive, final boolean bypass, final boolean onlyRoot) {
@@ -903,12 +908,6 @@ public class QueryManager extends AlpineQueryManager {
         getVulnerabilityQueryManager().deleteAffectedVersionAttributions(vulnerability);
     }
 
-    public boolean hasAffectedVersionAttribution(final Vulnerability vulnerability,
-                                                 final VulnerableSoftware vulnerableSoftware,
-                                                 final Vulnerability.Source source) {
-        return getVulnerabilityQueryManager().hasAffectedVersionAttribution(vulnerability, vulnerableSoftware, source);
-    }
-
     public boolean hasVulnerabilities(final Project project) {
         return getVulnerabilityQueryManager().hasVulnerabilities(project);
     }
@@ -1175,6 +1174,10 @@ public class QueryManager extends AlpineQueryManager {
 
     void deleteAnalysisTrail(Project project) {
         getFindingsQueryManager().deleteAnalysisTrail(project);
+    }
+
+    public void deleteAnalysisTrail(Vulnerability vulnerability) {
+        getFindingsQueryManager().deleteAnalysisTrail(vulnerability);
     }
 
     public List<Finding> getFindings(Project project) {
