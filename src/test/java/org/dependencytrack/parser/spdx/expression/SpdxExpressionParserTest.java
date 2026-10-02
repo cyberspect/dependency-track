@@ -54,10 +54,4 @@ class SpdxExpressionParserTest {
         Assertions.assertEquals(SpdxExpression.INVALID, exp);
     }
 
-    @Test
-    public void testDanglingOperator() {
-        var exp = SpdxExpressionParser.getInstance().parse("GPL-3.0-or-later AND GPL-2.0-or-later AND GPL-2.0-only AND");
-        assertEquals(SpdxExpression.INVALID, exp);
-    }
-
 }

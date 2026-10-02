@@ -26,18 +26,36 @@ This branch (`4.14.x`) carries Cyberspect-specific customizations on top of upst
 1. The customized files themselves, for conflicts or silent overwrites.
 2. Every caller of the customized code, in case the upstream release changed how it's used.
 
-Customized files as of the 4.14.1 fork point:
+Cyberspect customizations (verified 2026-10-02 from git history):
 
-* `src/main/java/org/dependencytrack/model/Project.java` — extra fields in the `ALL` JDO fetch group
-  (`manufacturer`, `directDependencies`, `lastBomImport`, `lastBomImportFormat`, `lastInheritedRiskScore`, `active`)
-* `src/main/java/org/dependencytrack/model/ProjectMetadata.java` — added `ALL` fetch group (`supplier`, `authors`)
-* `src/main/java/org/dependencytrack/notification/vo/BomConsumedOrProcessed.java` — `getBom()` forced to return
-  `null` (raw BOM detail is too large for AWS Lambda)
-* `dev/docker-compose.yml` — added apiserver healthcheck (dev tooling only)
+* `src/main/java/org/dependencytrack/notification/vo/BomConsumedOrProcessed.java` — `getBom()` returns `null`
+  because the raw BOM is too large for the AWS Lambda that receives BOM notifications (`02c401a19`).
+  * Caller: `src/main/java/org/dependencytrack/util/NotificationUtil.java` (`if (vo.getBom() != null)` — skips the
+    BOM in the notification JSON).
+  * Test adjusted to match: `src/test/java/org/dependencytrack/notification/publisher/WebhookPublisherTest.java`
+    (`b64b46ee2`).
 
-`application.properties` had no intentional customizations as of the 4.14.1 fork point — a duplicated
-`alpine.datanucleus.executioncontext.maxidle` block (a merge artifact, not a deliberate change) was found and
-removed on `4.14.x` in 2026-10.
+To re-derive this list, show the commits only Cyberspect wrote and check what each still changes:
+
+```bash
+git log --no-merges --format="%h %ad %an | %s" --date=short 4.14.x --not --tags --remotes=upstream
+```
+
+Not Cyberspect changes — upstream code the fork kept through merges. Leave them as they are; if an upstream merge
+conflicts there, take upstream's version:
+
+* `src/main/java/org/dependencytrack/model/Project.java` (extra `ALL` fetch-group fields) and
+  `src/main/java/org/dependencytrack/model/ProjectMetadata.java` (`ALL` fetch group) — upstream fix `fc4498a9e`,
+  released only in 4.11.7.
+* `dev/docker-compose.yml` apiserver healthcheck — upstream `bf351c905` / `4def88d58`.
+* A duplicated `alpine.datanucleus.executioncontext.maxidle` block in `application.properties` was a merge
+  artifact; removed on `4.14.x` in 2026-10.
+
+Many files lack a trailing newline compared with upstream. That is merge noise, and it causes trivial conflicts
+when upstream appends to the end of a file: keep upstream's addition.
+
+This customization does not need porting to v5: v5 already sends `"(Omitted)"` as the BOM content in
+notifications.
 
 ## GitHub Issues and PRs
 
