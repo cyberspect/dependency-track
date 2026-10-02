@@ -19,8 +19,6 @@
 package org.dependencytrack.tasks.repositories;
 
 import com.github.packageurl.PackageURL;
-import junitparams.JUnitParamsRunner;
-import junitparams.Parameters;
 import org.dependencytrack.model.Component;
 import org.dependencytrack.model.RepositoryType;
 import org.junit.jupiter.api.Assertions;
